@@ -17,4 +17,16 @@ Plans, research, reviews and evidence are maintained there without a second copy
 
 Use the sole working directory `/home/temrjan/Dev/projects/web-biotact` and follow [AGENTS.md](AGENTS.md). Shared backend work uses `/home/temrjan/Dev/projects/miniapp-biotact`.
 
-This initial repository contains documentation and workspace rules. The website framework, application code, dependencies and deployment workflow have not been introduced. AI consultant requirements are recorded in DocHub; implementation and evaluation wait for that feature's stage.
+The website framework, application code and application dependencies have not been introduced. AI consultant requirements are recorded in DocHub; implementation and evaluation wait for that feature's stage.
+
+## Repository checks
+
+Run `bash scripts/ci.sh` from a full Git checkout on Linux x86_64. It requires Bash, Git, curl, tar and sha256sum. The script downloads pinned actionlint, ShellCheck and Gitleaks releases into the ignored `.cache/ci` directory, verifies their SHA-256 checksums, validates all workflows and shell scripts, and scans the complete available Git history for secrets with redacted output. Uncommitted files are not part of the history scan. This scan does not replace GitHub push protection.
+
+GitHub Actions runs the same command for every pull request and every push to `main`; manual runs are also available once the workflow is on `main`. All files are in scope because a secret can be introduced anywhere. Dependabot proposes weekly updates for pinned GitHub Actions. CLI version/checksum updates are maintained in `scripts/ci.sh`.
+
+Application lint, type checking, tests and production build must be added using the chosen framework's actual commands and lockfile when application code is introduced. Repository checks alone do not establish application readiness.
+
+## Delivery
+
+The intended production destination is the existing Biotact server. Production delivery will be a separate manual workflow, restricted to the accepted `main` revision after successful application CI, with verified SSH host identity, deployment serialization, a health check and a defined rollback. Its executable commands depend on the application build/runtime contract. No deploy workflow or server credentials are installed yet. The existing Tilda site remains live until the website is ready for the planned `biotact.uz` cutover. Working decisions and remaining setup inputs are recorded in DocHub.

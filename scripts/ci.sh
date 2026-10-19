@@ -39,6 +39,6 @@ export PATH="$tool_dir:$PATH"
 actionlint -version
 shellcheck --version
 gitleaks version
-shellcheck $PWD/scripts/*.sh
+shellcheck scripts/*.sh
 actionlint
 gitleaks git --redact --no-banner --log-opts='--all --full-history' .

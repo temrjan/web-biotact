@@ -23,7 +23,7 @@ The website framework, application code and application dependencies have not be
 
 Run `bash scripts/ci.sh` from a full Git checkout on Linux x86_64. It requires Bash, Git, curl, tar and sha256sum. The script downloads pinned actionlint, ShellCheck and Gitleaks releases into the ignored `.cache/ci` directory, verifies their SHA-256 checksums, validates all workflows and shell scripts, and scans the complete available Git history for secrets with redacted output. Uncommitted files are not part of the history scan. This scan does not replace GitHub push protection.
 
-GitHub Actions runs the same command for every pull request and every push to `main`; manual runs are also available once the workflow is on `main`. All files are in scope because a secret can be introduced anywhere. Dependabot proposes weekly updates for pinned GitHub Actions. CLI version/checksum updates are maintained in `scripts/ci.sh`.
+GitHub Actions runs the same command for every pull request and every push to `main`; manual runs are also available once the workflow is on `main`. All files are in scope because a secret can be introduced anywhere. Dependabot version updates, security updates and alerts are disabled at the owner's request. Maintain action pins and CLI versions/checksums manually through reviewed changes; CLI pins are in `scripts/ci.sh`.
 
 Application lint, type checking, tests and production build must be added using the chosen framework's actual commands and lockfile when application code is introduced. Repository checks alone do not establish application readiness.
 

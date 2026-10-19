@@ -20,3 +20,5 @@ The website consumes the existing business API. Shared schema/business changes a
 AI consultant mapping, model selection, trials, implementation and checks wait until its feature stage. Owner-directed catalogue maintenance uses the existing protected API; this does not grant administrative tools to the public consultant.
 
 Do not commit secrets, real environment files or personal exports. Repository setup does not authorize a framework choice, production configuration/DNS changes, deployment or additional agents.
+
+Dependabot version updates, security updates and alerts must remain disabled per the Captain's explicit instruction. Do not add a Dependabot configuration or enable its repository features without a new Captain decision. Maintain dependency/action/tool updates manually through reviewed changes.

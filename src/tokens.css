@@ -1,0 +1,86 @@
+/* Component foundation r4. This is the only editable token value source. */
+:root {
+  /* Typography: nominal pixels assume a 16px browser default. */
+  --bt-font-family: Arial, Helvetica, sans-serif;
+  --bt-font-size-caption: 0.875rem;
+  --bt-font-size-small: 0.9375rem;
+  --bt-font-size-body: 1.0625rem;
+  --bt-font-size-card: 1.125rem;
+  --bt-font-size-section: 1.5rem;
+  --bt-font-size-page: 2.125rem;
+  --bt-font-size-page-compact: 1.75rem;
+  --bt-font-weight-regular: 400;
+  --bt-font-weight-strong: 700;
+  --bt-line-height-heading: 1.2;
+  --bt-line-height-compact: 1.35;
+  --bt-line-height-body: 1.5;
+
+  /* Tight grouping, component padding and section rhythm. */
+  --bt-space-1: 0.25rem;
+  --bt-space-2: 0.5rem;
+  --bt-space-3: 0.75rem;
+  --bt-space-4: 1rem;
+  --bt-space-5: 1.25rem;
+  --bt-space-6: 1.5rem;
+  --bt-space-8: 2rem;
+
+  /* Shell dimensions and practical minimums, not fixed text heights. */
+  --bt-content-max: 87.5rem;
+  --bt-sidebar-width: 13.5rem;
+  --bt-drawer-width: 20rem;
+  --bt-consultant-width: 22.375rem;
+  --bt-header-min-height: 4.75rem;
+  --bt-header-min-height-compact: 4rem;
+  --bt-control-min-height: 2.75rem;
+  --bt-card-media-min-height: 8rem;
+  --bt-border-width: 1px;
+  --bt-indicator-width: 3px;
+  --bt-radius-control: 0.625rem;
+  --bt-radius-card: 1rem;
+  --bt-radius-panel: 1.25rem;
+  --bt-shadow-raised:
+    4px 4px 12px rgb(0 0 0 / 0.1), -4px -4px 12px rgb(255 255 255 / 0.85);
+  --bt-shadow-inset:
+    inset 2px 2px 5px rgb(0 0 0 / 0.1),
+    inset -2px -2px 5px rgb(255 255 255 / 0.85);
+  --bt-focus-width: 2px;
+  --bt-focus-offset: 3px;
+
+  /* Pale base surfaces; Captain-selected green is scoped to action roles. */
+  --bt-canvas: #eeeeee;
+  --bt-surface: #f5f5f5;
+  --bt-surface-subtle: #e8e8e8;
+  --bt-surface-paper: #ffffff;
+  --bt-surface-hover: #e3e3e3;
+  --bt-surface-selected: #dddddd;
+  --bt-text: #2e2521;
+  --bt-text-muted: #655b55;
+  --bt-text-inverse: #ffffff;
+  --bt-border: #c4c4c4;
+  --bt-border-control: var(--bt-border);
+  --bt-action: #0c3d2b;
+  /* sRGB channel mixes: 12% white / 12% black from the action base. */
+  --bt-action-hover: #295444;
+  --bt-action-active: #0b3626;
+  /* Accepted standalone card palette, shared by neutral interaction roles. */
+  --bt-neutral: #ebebeb;
+  --bt-neutral-hover: #e3e3e3;
+  --bt-neutral-active: #d8d8d8;
+  --bt-quantity-hover: #e0e0e0;
+  --bt-border-subtle: #d6d6d6;
+  --bt-action-subtle: var(--bt-neutral);
+  --bt-action-subtle-hover: var(--bt-neutral-hover);
+  --bt-action-subtle-selected: var(--bt-neutral-active);
+  /* Basket sample count: muted warm red, independent of action/error roles. */
+  --bt-badge-background: #a45149;
+  --bt-badge-foreground: var(--bt-text-inverse);
+  --bt-disabled-surface: #eeeeee;
+  --bt-disabled-text: #767676;
+  --bt-focus: var(--bt-action);
+  --bt-overlay: rgb(0 0 0 / 0.32);
+
+  /* Only the shell header and the isolated layering example need layers. */
+  --bt-layer-header: 10;
+  --bt-layer-overlay: 20;
+  --bt-layer-panel: 30;
+}

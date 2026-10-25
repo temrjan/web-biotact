@@ -26,3 +26,35 @@ jobs:
           persist-credentials: false
       - name: Validate workflows, shell scripts and Git history
         run: bash scripts/ci.sh
+
+  application:
+    name: Application and browser UI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run type-check
+      - run: npm test
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Browser UI against synthetic API boundary
+        run: npm run test:browser
+        env:
+          TG1_BROWSER_BOUNDARY: '1'
+      - name: Email-only context hides Telegram
+        run: npm run test:browser:email
+        env:
+          TG1_BROWSER_BOUNDARY: '1'
+          TG1_BROWSER_EMAIL_ONLY: '1'
+      - name: Catalogue UI against synthetic public boundary
+        run: npm run test:browser:catalogue
+        env:
+          TG1_BROWSER_BOUNDARY: '1'

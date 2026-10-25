@@ -13,10 +13,10 @@ import Basket, {
   basketCopy,
   CartIcon,
   Quantity,
-  type BasketLine,
   type Purchases,
 } from "./Basket";
 import * as api from "./catalogue";
+import { useGuestBasket } from "./guestBasket";
 import { href, parseLocation, type Location } from "./navigation";
 
 const copy = {
@@ -754,7 +754,9 @@ export default function App() {
   const loc = parseLocation(hash),
     t = copy[loc.lang];
   const [expanded, setExpanded] = useState(true);
-  const [lines, setLines] = useState<BasketLine[]>([]);
+  const [basketLanguageRevision, setBasketLanguageRevision] = useState(0);
+  const basket = useGuestBasket(loc.lang);
+  const { lines, change: changeQuantity, units } = basket;
   const [surface, setSurface] = useState<
     "menu" | "assistant" | "basket" | "announcement" | "size" | null
   >(null);
@@ -767,6 +769,7 @@ export default function App() {
   const [compact, setCompact] = useState(
     () => window.matchMedia("(max-width: 999px)").matches,
   );
+  const hashRef = useRef(hash);
   const dialog = useRef<HTMLDialogElement>(null),
     assistantDialog = useRef<HTMLDialogElement>(null),
     basketDialog = useRef<HTMLDialogElement>(null),
@@ -777,12 +780,27 @@ export default function App() {
     origin = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const change = () => {
+      const previous = parseLocation(hashRef.current);
+      const next = parseLocation(window.location.hash);
+      const languageOnly =
+        href({ ...previous, lang: "ru" }) === href({ ...next, lang: "ru" });
+      // Cached language projections also invalidate a previous local review.
+      if (previous.lang !== next.lang) setBasketLanguageRevision((n) => n + 1);
+      hashRef.current = window.location.hash;
       setHash(window.location.hash);
       setSurface((current) =>
-        current === "announcement" || current === "size" ? null : current,
+        current === "announcement" ||
+        current === "size" ||
+        (current === "basket" && !languageOnly)
+          ? null
+          : current,
       );
       setSizeRequest(null);
-      if (exampleDialog.current?.open || sizeDialog.current?.open)
+      if (
+        exampleDialog.current?.open ||
+        sizeDialog.current?.open ||
+        (basketDialog.current?.open && !languageOnly)
+      )
         requestAnimationFrame(() =>
           document.getElementById("content")?.focus(),
         );
@@ -851,31 +869,6 @@ export default function App() {
     sizeOrigin.current = trigger.closest<HTMLElement>(".product-card");
     setSizeRequest({ product, onAdded, ...(beforeAdd ? { beforeAdd } : {}) });
     show("size", trigger);
-  }
-  function changeQuantity(
-    product: api.Product,
-    size: string | null,
-    delta: number,
-  ) {
-    const validSize = product.requires_size
-      ? size !== null && product.available_sizes.includes(size)
-      : size === null;
-    if (
-      delta > 0 &&
-      (!product.is_purchasable || !product.is_in_stock || !validSize)
-    )
-      return;
-    setLines((current) => {
-      const index = current.findIndex(
-        (line) => line.product.id === product.id && line.size === size,
-      );
-      const quantity = (current[index]?.quantity || 0) + delta;
-      if (quantity <= 0) return current.filter((_, i) => i !== index);
-      const line = { product, size, quantity };
-      return index === -1
-        ? [...current, line]
-        : current.map((item, i) => (i === index ? line : item));
-    });
   }
   function dialogKeys(e: KeyboardEvent<HTMLDialogElement>) {
     if (e.key === "Escape") {
@@ -952,7 +945,6 @@ export default function App() {
     () => () => document.documentElement.classList.remove("modal-open"),
     [],
   );
-  const units = lines.reduce((sum, line) => sum + line.quantity, 0);
   const context =
     loc.view === "home"
       ? t.home
@@ -1238,16 +1230,25 @@ export default function App() {
           }}
         />
       )}
-      <Basket
-        lang={loc.lang}
-        lines={lines}
-        change={changeQuantity}
-        dialogRef={basketDialog}
-        onClose={() => {
-          if (surface === "basket") dismiss();
-        }}
-        onKeyDown={dialogKeys}
-      />
+      {surface === "basket" && (
+        <Basket
+          lang={loc.lang}
+          entries={basket.entries}
+          change={changeQuantity}
+          remove={basket.remove}
+          retry={basket.retry}
+          notice={basket.notice}
+          revision={basket.revision + basketLanguageRevision}
+          onLanguage={(lang) => {
+            window.location.assign(href({ ...loc, lang }));
+          }}
+          dialogRef={basketDialog}
+          onClose={() => {
+            if (surface === "basket") dismiss();
+          }}
+          onKeyDown={dialogKeys}
+        />
+      )}
     </div>
   );
 }

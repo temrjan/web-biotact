@@ -1,10 +1,16 @@
 import {
   useEffect,
   useRef,
+  useState,
   type KeyboardEventHandler,
   type RefObject,
 } from "react";
 import { money, price, type Language, type Product } from "./catalogue";
+import GuestDetails, {
+  detailsCopy,
+  type DeliveryDetails,
+} from "./GuestDetails";
+import { selectionAvailable, type BasketEntry } from "./guestBasket";
 
 export const basketCopy = {
   ru: {
@@ -17,10 +23,10 @@ export const basketCopy = {
     remove: "Убрать",
     empty: "В корзине пока пусто",
     emptyNote: "Добавьте понравившийся товар из каталога.",
-    note: "Локальная корзина для просмотра. Выбор сбрасывается при обновлении страницы. Оформление заказа пока недоступно.",
+    note: "Корзина сохраняется в этом браузере. Можно заполнить данные доставки без аккаунта. Заказ и оплата пока недоступны.",
     prices:
-      "Цены из каталога на момент добавления. Товары не резервируются; цена и наличие могут измениться.",
-    total: "Итого",
+      "Предварительная стоимость по каталогу. Товары не резервируются; цена и наличие могут измениться. Доставка оплачивается отдельно.",
+    total: "По каталогу, предварительно",
     size: "Размер",
     choose: "Выберите размер",
     cancel: "Отмена",
@@ -36,10 +42,10 @@ export const basketCopy = {
     remove: "Olib tashlash",
     empty: "Savat hozircha boʻsh",
     emptyNote: "Katalogdan yoqqan mahsulotni qoʻshing.",
-    note: "Koʻrish uchun mahalliy savat. Sahifa yangilanganda tanlov oʻchadi. Buyurtma rasmiylashtirish hali mavjud emas.",
+    note: "Savat shu brauzerda saqlanadi. Yetkazib berish maʼlumotlarini akkauntsiz kiritish mumkin. Buyurtma va toʻlov hali mavjud emas.",
     prices:
-      "Narxlar qoʻshish paytidagi katalogdan. Mahsulotlar band qilinmaydi; narx va mavjudlik oʻzgarishi mumkin.",
-    total: "Jami",
+      "Katalog boʻyicha taxminiy narx. Mahsulotlar band qilinmaydi; narx va mavjudlik oʻzgarishi mumkin. Yetkazib berish alohida toʻlanadi.",
+    total: "Katalog boʻyicha taxminan",
     size: "Oʻlcham",
     choose: "Oʻlchamni tanlang",
     cancel: "Bekor qilish",
@@ -145,7 +151,7 @@ export function Quantity({
           )}
           <button
             data-more
-            disabled={disabled}
+            disabled={disabled || count >= 99}
             aria-label={`${t.more}: ${name}`}
             onClick={() => change(1)}
           >
@@ -156,33 +162,113 @@ export function Quantity({
     </div>
   );
 }
+const flowCopy = {
+  ru: {
+    invalid:
+      "Сохранённая корзина повреждена или устарела. Добавьте товары заново.",
+    unavailable:
+      "Не удаётся сохранить корзину в браузере. Пока страница открыта, ею можно пользоваться.",
+    loading: "Проверяем товар…",
+    error: "Не удалось проверить товар. Повторите или уберите его.",
+    missing: "Товар не найден.",
+    blocked: "Товар недоступен для покупки.",
+    size: "Выбранный размер недоступен. Уберите эту строку и выберите доступный вариант в каталоге.",
+    retry: "Повторить",
+    product: "Товар",
+    continue: "Данные доставки",
+    review: "Проверьте данные",
+    back: "Назад к данным",
+    noOrder: "Заказ ещё не создан. Отправка заказа и оплата пока недоступны.",
+    pay: "Оплата недоступна",
+    check: "Сначала проверьте все товары в корзине.",
+  },
+  uz: {
+    invalid:
+      "Saqlangan savat buzilgan yoki eskirgan. Mahsulotlarni qayta qoʻshing.",
+    unavailable:
+      "Savatni brauzerda saqlab boʻlmadi. Sahifa ochiq turganda undan foydalanish mumkin.",
+    loading: "Mahsulot tekshirilmoqda…",
+    error: "Mahsulotni tekshirib boʻlmadi. Qayta urining yoki olib tashlang.",
+    missing: "Mahsulot topilmadi.",
+    blocked: "Mahsulotni xarid qilib boʻlmaydi.",
+    size: "Tanlangan oʻlcham mavjud emas. Bu qatorni olib tashlang va katalogdan mavjud variantni tanlang.",
+    retry: "Qayta urinish",
+    product: "Mahsulot",
+    continue: "Yetkazib berish maʼlumotlari",
+    review: "Maʼlumotlarni tekshiring",
+    back: "Maʼlumotlarga qaytish",
+    noOrder:
+      "Buyurtma hali yaratilmagan. Buyurtmani yuborish va toʻlov hozircha mavjud emas.",
+    pay: "Toʻlov mavjud emas",
+    check: "Avval savatdagi barcha mahsulotlarni tekshiring.",
+  },
+};
 export default function Basket({
   lang,
-  lines,
+  entries,
   change,
+  remove,
+  retry,
+  notice,
+  revision,
+  onLanguage,
   dialogRef,
   onClose,
   onKeyDown,
-}: Purchases & {
+}: {
   lang: Language;
+  entries: BasketEntry[];
+  change: Purchases["change"];
+  remove: (id: number, size: string | null) => void;
+  retry: (id: number) => void;
+  notice: "invalid" | "unavailable" | null;
+  revision: number;
+  onLanguage: (lang: Language) => void;
   dialogRef: RefObject<HTMLDialogElement | null>;
   onClose: () => void;
   onKeyDown: KeyboardEventHandler<HTMLDialogElement>;
 }) {
-  const t = basketCopy[lang];
-  const totals = new Map<string, number>();
-  for (const { product, quantity } of lines)
-    totals.set(
-      product.currency,
-      (totals.get(product.currency) || 0) +
-        Number(price(product).current) * quantity,
+  const t = basketCopy[lang],
+    f = flowCopy[lang],
+    d = detailsCopy[lang];
+  const [stage, setStage] = useState<"basket" | "form" | "review">("basket");
+  const [draft, setDraft] = useState<DeliveryDetails>({
+    name: "",
+    phone: "",
+    address: "",
+  });
+  const [reviewRevision, setReviewRevision] = useState<number | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const available =
+    entries.length > 0 &&
+    entries.every(
+      (entry) =>
+        entry.status === "ready" &&
+        selectionAvailable(entry.product, entry.size),
     );
-  function update(line: BasketLine, delta: number) {
-    if (line.quantity + delta <= 0)
-      dialogRef.current
-        ?.querySelector<HTMLButtonElement>(".close-control")
-        ?.focus();
-    change(line.product, line.size, delta);
+  // A monotonic basket revision prevents an old review from returning after an edit/retry.
+  const currentStage =
+    stage === "review" && (reviewRevision !== revision || !available)
+      ? "form"
+      : stage;
+  useEffect(() => {
+    heading.current?.focus();
+  }, [currentStage]);
+  const totals = new Map<string, number>();
+  for (const entry of entries)
+    if (entry.status === "ready") {
+      const { product, quantity } = entry;
+      totals.set(
+        product.currency,
+        (totals.get(product.currency) || 0) +
+          Number(price(product).current) * quantity,
+      );
+    }
+  function removeEntry(entry: BasketEntry) {
+    dialogRef.current
+      ?.querySelector<HTMLButtonElement>(".close-control")
+      ?.focus();
+    remove(entry.product_id, entry.size);
   }
   return (
     <dialog
@@ -193,14 +279,20 @@ export default function Basket({
       onClose={() => {
         if (!dialogRef.current?.open) onClose();
       }}
-      onCancel={(e) => {
-        e.preventDefault();
+      onCancel={(event) => {
+        event.preventDefault();
         onClose();
       }}
       onKeyDown={onKeyDown}
     >
       <div className="dialog-heading">
-        <h2 id="basket-title">{t.title}</h2>
+        <h2 id="basket-title" ref={heading} tabIndex={-1}>
+          {currentStage === "basket"
+            ? t.title
+            : currentStage === "form"
+              ? d.title
+              : f.review}
+        </h2>
         <button
           className="close-control"
           data-initial-focus
@@ -210,75 +302,209 @@ export default function Basket({
           ×
         </button>
       </div>
+      <div className="basket-languages" aria-label="Language">
+        <button
+          lang="ru"
+          aria-pressed={lang === "ru"}
+          onClick={() => onLanguage("ru")}
+        >
+          RU
+        </button>
+        <button
+          lang="uz"
+          aria-pressed={lang === "uz"}
+          onClick={() => onLanguage("uz")}
+        >
+          UZ
+        </button>
+      </div>
       <p className="basket-note" id="basket-note">
         {t.note}
       </p>
-      {lines.length === 0 ? (
-        <div className="empty-state">
-          <CartIcon />
-          <p>
-            <strong>{t.empty}</strong>
-          </p>
-          <p>{t.emptyNote}</p>
-        </div>
+      {notice && (
+        <p className="basket-notice" role="status">
+          {f[notice]}
+        </p>
+      )}
+      {currentStage === "form" ? (
+        <>
+          {!available && (
+            <p className="basket-notice" role="status">
+              {f.check}
+            </p>
+          )}
+          <GuestDetails
+            lang={lang}
+            value={draft}
+            available={available}
+            onChange={(value) => {
+              setDraft(value);
+              setReviewRevision(null);
+              setStage("form");
+            }}
+            onBack={() => setStage("basket")}
+            onReview={() => {
+              if (available) {
+                setReviewRevision(revision);
+                setStage("review");
+              }
+            }}
+          />
+        </>
       ) : (
         <>
-          <ul className="basket-items">
-            {lines.map((line) => {
-              const { product: p, size, quantity } = line,
-                name = `${p.name}${size ? ` · ${size}` : ""}`;
-              return (
-                <li
-                  className="basket-row"
-                  key={`${p.id}:${size || ""}`}
-                  data-basket-product={p.id}
-                  data-basket-size={size || ""}
-                >
-                  <div>
-                    <p className="basket-name">{p.name}</p>
-                    {size && (
-                      <p>
-                        {t.size}: {size}
-                      </p>
-                    )}
-                    <p className="basket-unit">
-                      {money(price(p).current, p.currency, lang)} × {quantity}
-                    </p>
-                  </div>
-                  <Quantity
-                    count={quantity}
-                    name={name}
-                    lang={lang}
-                    disabled={!p.is_purchasable || !p.is_in_stock}
-                    onChange={(delta) => update(line, delta)}
-                  />
-                  <button
-                    className="basket-remove"
-                    aria-label={`${t.remove}: ${name}`}
-                    onClick={() => update(line, -quantity)}
-                  >
-                    {t.remove}
-                  </button>
-                  <p className="basket-subtotal">
-                    {money(
-                      String(Number(price(p).current) * quantity),
-                      p.currency,
-                      lang,
-                    )}
-                  </p>
-                </li>
-              );
-            })}
-          </ul>
-          <div className="basket-total">
-            <span>{t.total}</span>
-            <div>
-              {[...totals].map(([currency, total]) => (
-                <p key={currency}>{money(String(total), currency, lang)}</p>
-              ))}
+          {currentStage === "review" && (
+            <dl className="guest-review">
+              <dt>{d.name}</dt>
+              <dd>{draft.name}</dd>
+              <dt>{d.phone}</dt>
+              <dd>{draft.phone}</dd>
+              <dt>{d.address}</dt>
+              <dd>{draft.address}</dd>
+            </dl>
+          )}
+          {entries.length === 0 ? (
+            <div className="empty-state">
+              <CartIcon />
+              <p>
+                <strong>{t.empty}</strong>
+              </p>
+              <p>{t.emptyNote}</p>
             </div>
-          </div>
-          <p className="basket-note">{t.prices}</p>
+          ) : (
+            <>
+              <ul className="basket-items">
+                {entries.map((entry) => {
+                  const { product_id: id, size, quantity } = entry;
+                  const p = entry.status === "ready" ? entry.product : null;
+                  const name = `${p?.name || `${f.product} №${id}`}${size ? ` · ${size}` : ""}`;
+                  const reason =
+                    entry.status !== "ready"
+                      ? f[entry.status]
+                      : !p?.is_purchasable || !p.is_in_stock
+                        ? f.blocked
+                        : !selectionAvailable(p, size)
+                          ? f.size
+                          : null;
+                  return (
+                    <li
+                      className="basket-row"
+                      key={JSON.stringify([id, size])}
+                      data-basket-product={id}
+                      data-basket-size={size || ""}
+                    >
+                      <div>
+                        <p className="basket-name">
+                          {p?.name || `${f.product} №${id}`}
+                        </p>
+                        {size !== null && (
+                          <p>
+                            {t.size}: {size}
+                          </p>
+                        )}
+                        {p && (
+                          <p className="basket-unit">
+                            {money(price(p).current, p.currency, lang)} ×{" "}
+                            {quantity}
+                          </p>
+                        )}
+                        {reason && (
+                          <p className="basket-notice" role="status">
+                            {reason}
+                          </p>
+                        )}
+                      </div>
+                      {currentStage === "basket" ? (
+                        <>
+                          {p ? (
+                            <Quantity
+                              count={quantity}
+                              name={name}
+                              lang={lang}
+                              disabled={!!reason}
+                              onChange={(delta) => {
+                                if (quantity + delta <= 0) removeEntry(entry);
+                                else change(p, size, delta);
+                              }}
+                            />
+                          ) : (
+                            <span>
+                              {t.count}: {quantity}
+                            </span>
+                          )}
+                          <button
+                            className="basket-remove"
+                            aria-label={`${t.remove}: ${name}`}
+                            onClick={() => removeEntry(entry)}
+                          >
+                            {t.remove}
+                          </button>
+                          {(entry.status === "error" ||
+                            entry.status === "missing") && (
+                            <button onClick={() => retry(id)}>{f.retry}</button>
+                          )}
+                        </>
+                      ) : (
+                        <p>
+                          {t.count}: {quantity}
+                        </p>
+                      )}
+                      {p && (
+                        <p className="basket-subtotal">
+                          {money(
+                            String(Number(price(p).current) * quantity),
+                            p.currency,
+                            lang,
+                          )}
+                        </p>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+              {totals.size > 0 && (
+                <div className="basket-total">
+                  <span>{t.total}</span>
+                  <div>
+                    {[...totals].map(([currency, total]) => (
+                      <p key={currency}>
+                        {money(String(total), currency, lang)}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <p className="basket-note">{t.prices}</p>
+              {currentStage === "basket" ? (
+                <button
+                  className="guest-continue"
+                  disabled={!available}
+                  onClick={() => setStage("form")}
+                >
+                  {f.continue}
+                </button>
+              ) : (
+                <>
+                  <p className="basket-notice" id="guest-payment-note">
+                    {f.noOrder}
+                  </p>
+                  <div className="guest-actions">
+                    <button
+                      onClick={() => {
+                        setReviewRevision(null);
+                        setStage("form");
+                      }}
+                    >
+                      {f.back}
+                    </button>
+                    <button disabled aria-describedby="guest-payment-note">
+                      {f.pay}
+                    </button>
+                  </div>
+                </>
+              )}
+            </>
+          )}
         </>
       )}
     </dialog>

@@ -1,5 +1,6 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { fixture, products } from "./catalogue.fixture";
+import { BASKET_STORAGE_KEY } from "../src/guestBasket";
 
 const firstCard = '[data-product-id="4001"]';
 const ordinaryCard = '[data-product-id="4004"]';
@@ -106,7 +107,7 @@ test("Product detail shares nonsized Add, quantity and removal with list, header
   ).toBe(true);
   expect(
     await page.evaluate(() => [localStorage.length, sessionStorage.length]),
-  ).toEqual([0, 0]);
+  ).toEqual([1, 0]);
 });
 
 test("Product detail requires an explicit available size, keeps canonical variants separate and blocks unavailable products", async ({
@@ -202,7 +203,7 @@ test("brand-green 2px keyboard focus remains visible on detail, fields and modal
     await page.keyboard.press("Enter");
     await greenFocus(page.locator(".basket-panel .close-control"));
     await page.keyboard.press("Shift+Tab");
-    await expect(page.locator(".basket-remove")).toBeFocused();
+    await expect(page.locator(".guest-continue")).toBeFocused();
     await page.keyboard.press("Tab");
     await expect(page.locator(".basket-panel .close-control")).toBeFocused();
     await greenFocus(page.locator(".basket-panel [data-more]"));
@@ -237,7 +238,7 @@ test("brand-green 2px keyboard focus remains visible on detail, fields and modal
   await greenFocus(page.locator(".account a").first());
 });
 
-test("accepted footer colors, size variants, availability and local basket share quantities without requests or persistence", async ({
+test("accepted footer colors, size variants, availability and remembered basket share quantities without purchase requests", async ({
   page,
 }) => {
   await fixture(
@@ -341,7 +342,7 @@ test("accepted footer colors, size variants, availability and local basket share
   await page.locator(".basket-button").click();
   await dialogCount(page, 1);
   await expect(page.locator(".basket-panel")).toContainText(
-    "обновлении страницы",
+    "сохраняется в этом браузере",
   );
   await expect(page.locator(".basket-row")).toHaveCount(3);
   for (const width of [390, 320]) {
@@ -393,7 +394,7 @@ test("accepted footer colors, size variants, availability and local basket share
   await page.keyboard.press("Escape");
   expect(
     await page.evaluate(() => [localStorage.length, sessionStorage.length]),
-  ).toEqual([0, 0]);
+  ).toEqual([1, 0]);
   expect(
     requests.every(
       (r) =>
@@ -416,7 +417,7 @@ test("accepted footer colors, size variants, availability and local basket share
   await expect(page.locator(".basket-badge")).toHaveText("1");
   await page.reload();
   await expect(page.locator(".home-grid article")).toHaveCount(4);
-  await expect(page.locator(".basket-badge")).toHaveCount(0);
+  await expect(page.locator(".basket-badge")).toHaveText("1");
 });
 
 test("compact size popup preserves Home/Catalogue card height, keyboard focus and draft cancellation at 390/320 and 125% text", async ({
@@ -655,7 +656,7 @@ test("AI draft stays local until explicit send and resets on semantic navigation
   ).toBe(0);
   expect(
     await page.evaluate(() => [localStorage.length, sessionStorage.length]),
-  ).toEqual([0, 0]);
+  ).toEqual([1, 0]);
 });
 
 test("AI adapts at 1440/1000/390/320 and enlarged text, modal focus/resize/menu/basket close cleanly", async ({
@@ -1100,4 +1101,420 @@ test.describe("banner native mobile gestures", () => {
       await cdp.detach();
     }
   });
+});
+
+async function seedGuestBasket(
+  page: Page,
+  items: { product_id: number; size: string | null; quantity: number }[],
+) {
+  await page.goto("/#catalogue");
+  await expect(page.locator(".product-grid article")).toHaveCount(20);
+  await page.evaluate(
+    ({ key, items }) =>
+      localStorage.setItem(key, JSON.stringify({ version: 1, items })),
+    { key: BASKET_STORAGE_KEY, items },
+  );
+  await page.reload();
+  await expect(page.locator(".product-grid article")).toHaveCount(20);
+}
+async function rememberedBasket(page: Page) {
+  return page.evaluate(
+    (key) => JSON.parse(localStorage.getItem(key) || "null") as unknown,
+    BASKET_STORAGE_KEY,
+  );
+}
+
+test("remembered exact variants survive reload, a new page and optional unavailable Account; all shared increments cap at99", async ({
+  page,
+  context,
+}) => {
+  await fixture(page);
+  await seedGuestBasket(page, [
+    { product_id: 4001, size: "L", quantity: 98 },
+    { product_id: 4001, size: "XL", quantity: 1 },
+    { product_id: 4004, size: null, quantity: 2 },
+  ]);
+  const sale = page.locator(firstCard);
+  await expect(sale.locator("output")).toHaveText("98");
+  await sale.locator("[data-more]").click();
+  await expect(sale.locator("output")).toHaveText("99");
+  await expect(sale.locator("[data-more]")).toBeDisabled();
+  // A full L line does not disable choosing XL through the accepted popup.
+  await sale.locator(".size-summary").click();
+  const picker = page.locator(".size-picker");
+  await picker.getByRole("button", { name: "L · 99", exact: true }).click();
+  await picker.getByRole("button", { name: "В корзину", exact: true }).click();
+  await expect(sale.locator("output")).toHaveText("99");
+  await sale.locator(".size-summary").click();
+  await picker.getByRole("button", { name: "XL · 1", exact: true }).click();
+  await picker.getByRole("button", { name: "В корзину", exact: true }).click();
+  await expect(sale.locator("output")).toHaveText("2");
+  await expect(page.locator(".basket-badge")).toHaveText("103");
+  await page.locator(firstCard + " h3 a").click();
+  await page.locator(".product-summary select").selectOption("L");
+  await expect(page.locator(".product-summary [data-more]")).toBeDisabled();
+  await page.locator(".basket-button").click();
+  await expect(
+    page.locator('[data-basket-size="L"] [data-more]'),
+  ).toBeDisabled();
+  await page.locator('[data-basket-size="XL"] [data-more]').click();
+  await page.keyboard.press("Escape");
+  const expected = {
+    version: 1,
+    items: [
+      { product_id: 4001, size: "L", quantity: 99 },
+      { product_id: 4001, size: "XL", quantity: 3 },
+      { product_id: 4004, size: null, quantity: 2 },
+    ],
+  };
+  await expect.poll(() => rememberedBasket(page)).toEqual(expected);
+  await page.route("**/api/v1/buyer/auth/**", (r) =>
+    r.fulfill({ status: 503, json: {} }),
+  );
+  await page.locator(".top-utilities > a").click();
+  await expect(page.locator(".account")).toBeVisible();
+  await expect(page.locator(".basket-badge")).toHaveText("104");
+  await page.reload();
+  await page.locator(".basket-button").click();
+  await expect(page.locator(".guest-continue")).toBeEnabled();
+  await page.locator(".guest-continue").click();
+  await expect(page.getByLabel("Имя", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  const second = await context.newPage();
+  try {
+    await fixture(second);
+    const langs: string[] = [];
+    second.on("request", (r) => {
+      if (/\/products\/\d+$/.test(new URL(r.url()).pathname))
+        langs.push(r.headers()["x-language"] || "");
+    });
+    await second.goto("/#catalogue?lang=uz");
+    await second.locator(".basket-button").click();
+    await expect(second.locator(".basket-row")).toHaveCount(3);
+    await expect(second.locator(".guest-continue")).toBeEnabled();
+    expect(langs).toEqual(["uz", "uz"]);
+    expect(await rememberedBasket(second)).toEqual(expected);
+  } finally {
+    await second.close();
+  }
+});
+
+test("guest validation, local review, draft lifetime and privacy cross the actual browser request and storage boundaries", async ({
+  page,
+}, testInfo) => {
+  await fixture(page);
+  const requests: { method: string; url: string; body: string }[] = [],
+    consoleMessages: string[] = [];
+  page.on("request", (r) =>
+    requests.push({
+      method: r.method(),
+      url: r.url(),
+      body: r.postData() || "",
+    }),
+  );
+  page.on("console", (message) => consoleMessages.push(message.text()));
+  await page.route("**/__test/guest-observer-control", (r) =>
+    r.fulfill({ status: 204 }),
+  );
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/#catalogue");
+  await page.evaluate(() =>
+    fetch("/__test/guest-observer-control", {
+      method: "POST",
+      body: "observer-control",
+    }),
+  );
+  expect(
+    requests.some((r) => r.method === "POST" && r.body === "observer-control"),
+  ).toBe(true);
+  requests.length = 0;
+  await page.locator(ordinaryCard + " .add").click();
+  await page.locator(".basket-button").click();
+  await page.locator(".guest-continue").click();
+  const name = page.getByLabel("Имя", { exact: true }),
+    phone = page.getByLabel("Контактный телефон"),
+    address = page.getByLabel("Адрес доставки");
+  await name.fill("   ");
+  await phone.fill("letters");
+  await address.fill("  ");
+  await phone.press("Enter");
+  await expect(name).toBeFocused();
+  await expect(page.locator(".guest-error")).toHaveCount(3);
+  const details = {
+    name: "李 Guest-Private <b>Тест</b>",
+    phone: "+1 (23)-4.5",
+    address: "Guest-Private 東京, дом 1\nвход 2",
+  };
+  await name.fill(details.name);
+  await phone.fill(details.phone);
+  await address.fill(details.address);
+  await page
+    .getByRole("button", { name: "Проверить данные", exact: true })
+    .click();
+  await expect(page.locator(".guest-review")).toContainText(details.name);
+  await expect(page.locator(".guest-review b")).toHaveCount(0);
+  await expect(page.locator("#guest-payment-note")).toContainText(
+    "Заказ ещё не создан",
+  );
+  await expect(
+    page.getByRole("button", { name: "Оплата недоступна", exact: true }),
+  ).toBeDisabled();
+  await page.screenshot({ path: testInfo.outputPath("guest-review-1440.png") });
+  const before = page.url();
+  await page
+    .getByRole("button", { name: "Оплата недоступна", exact: true })
+    .evaluate((button: HTMLButtonElement) => {
+      button.click();
+      button.click();
+    });
+  await page.keyboard.press("Enter");
+  expect(page.url()).toBe(before);
+  await expect(page.locator(".basket-badge")).toHaveText("1");
+  await page
+    .getByRole("button", { name: "Назад к данным", exact: true })
+    .click();
+  await expect(name).toHaveValue(details.name);
+  await page
+    .getByRole("button", { name: "Назад в корзину", exact: true })
+    .click();
+  await page.locator(".basket-panel [data-more]").click();
+  await page.locator(".guest-continue").click();
+  await expect(name).toHaveValue(details.name);
+  await expect(page.locator(".guest-review")).toHaveCount(0);
+  await phone.fill("7");
+  await page
+    .getByRole("button", { name: "Проверить данные", exact: true })
+    .click();
+  await expect(page.locator(".guest-review")).toContainText("7");
+  await expect(page.locator(".basket-unit")).toContainText("× 2");
+  await page
+    .getByRole("button", { name: "Назад к данным", exact: true })
+    .click();
+  await page.locator('.basket-languages [lang="uz"]').click();
+  await expect(page.getByLabel("Ism", { exact: true })).toHaveValue(
+    details.name,
+  );
+  await expect(page.getByLabel("Aloqa telefoni")).toHaveValue("7");
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.evaluate(
+      () => (document.documentElement.style.fontSize = "125%"),
+    );
+    await page.keyboard.press("Tab");
+    await greenFocus(page.getByLabel("Yetkazib berish manzili"));
+    await noOverflow(page);
+    await page.screenshot({
+      path: testInfo.outputPath(`guest-form-${width}.png`),
+    });
+  }
+  await page
+    .getByRole("button", { name: "Maʼlumotlarni tekshirish", exact: true })
+    .click();
+  await expect(page.locator(".guest-review")).toContainText(details.name);
+  await noOverflow(page);
+  // Both translations are cached now; changing the resolved projection still invalidates review.
+  await page.locator('.basket-languages [lang="ru"]').click();
+  await expect(page.locator(".guest-review")).toHaveCount(0);
+  await expect(name).toHaveValue(details.name);
+  await page
+    .getByRole("button", { name: "Проверить данные", exact: true })
+    .click();
+  await page.locator('.basket-languages [lang="uz"]').click();
+  await expect(page.locator(".guest-review")).toHaveCount(0);
+  await expect(page.getByLabel("Ism", { exact: true })).toHaveValue(
+    details.name,
+  );
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".basket-button")).toBeFocused();
+  await page.locator(".basket-button").click();
+  await expect(page.locator("#basket-title")).toHaveText("Savat");
+  await page.locator(".guest-continue").click();
+  await expect(page.getByLabel("Ism", { exact: true })).toHaveValue("");
+  await page.getByLabel("Ism", { exact: true }).fill(details.name);
+  await page.evaluate(() => {
+    window.location.hash = "#product?id=4004&lang=uz";
+  });
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await page.locator(".basket-button").click();
+  await page.locator(".guest-continue").click();
+  await expect(page.getByLabel("Ism", { exact: true })).toHaveValue("");
+  await page.reload();
+  await page.locator(".basket-button").click();
+  await page.locator(".guest-continue").click();
+  await expect(page.getByLabel("Ism", { exact: true })).toHaveValue("");
+  const storage = await page.evaluate(() => ({
+    local: { ...localStorage },
+    session: { ...sessionStorage },
+    url: location.href,
+  }));
+  expect(storage.local).toEqual({
+    [BASKET_STORAGE_KEY]: JSON.stringify({
+      version: 1,
+      items: [{ product_id: 4004, size: null, quantity: 2 }],
+    }),
+  });
+  expect(storage.session).toEqual({});
+  expect(JSON.stringify(storage)).not.toContain("Guest-Private");
+  expect(JSON.stringify(requests)).not.toContain("Guest-Private");
+  expect(JSON.stringify(storage)).not.toContain(details.phone);
+  expect(JSON.stringify(requests)).not.toContain(details.phone);
+  expect(consoleMessages.join("\n")).not.toContain("Guest-Private");
+  expect(requests.filter((r) => !["GET", "HEAD"].includes(r.method))).toEqual(
+    [],
+  );
+});
+
+test("corrupt storage and denied read/write retain usable in-memory Add, form and removal", async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.goto("/#catalogue");
+  await expect(page.locator(".product-grid article")).toHaveCount(20);
+  await page.evaluate(
+    (key) => localStorage.setItem(key, "{broken"),
+    BASKET_STORAGE_KEY,
+  );
+  await page.reload();
+  await page.locator(".basket-button").click();
+  await expect(page.locator(".basket-notice")).toContainText("повреждена");
+  await expect(page.locator(".empty-state")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.addInitScript(() => {
+    Storage.prototype.getItem = () => {
+      throw new DOMException("Denied", "SecurityError");
+    };
+    Storage.prototype.setItem = () => {
+      throw new DOMException("Full", "QuotaExceededError");
+    };
+  });
+  await page.reload();
+  await page.locator(ordinaryCard + " .add").click();
+  await page.locator(".basket-button").click();
+  await expect(page.locator(".basket-notice")).toContainText(
+    "Не удаётся сохранить",
+  );
+  await page.locator(".basket-panel [data-more]").click();
+  await expect(page.locator(".basket-panel output")).toHaveText("2");
+  await page.locator(".guest-continue").click();
+  await page.getByLabel("Имя", { exact: true }).fill("Memory");
+  await page.getByLabel("Контактный телефон").fill("1");
+  await page.getByLabel("Адрес доставки").fill("Memory address");
+  await page
+    .getByRole("button", { name: "Проверить данные", exact: true })
+    .click();
+  await expect(page.locator(".guest-review")).toContainText("Memory address");
+  await page
+    .getByRole("button", { name: "Назад к данным", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Назад в корзину", exact: true })
+    .click();
+  await page.locator(".basket-remove").click();
+  await expect(page.locator(".empty-state")).toBeVisible();
+});
+
+test("restoration keeps missing, failed, unavailable and obsolete variants visible; retry and removal recover without substitution", async ({
+  page,
+}) => {
+  await fixture(page);
+  await seedGuestBasket(page, [
+    { product_id: 9999, size: null, quantity: 1 },
+    { product_id: 4004, size: null, quantity: 2 },
+    { product_id: 4002, size: null, quantity: 1 },
+    { product_id: 4003, size: null, quantity: 1 },
+    { product_id: 4001, size: "XXL", quantity: 1 },
+    { product_id: 4001, size: null, quantity: 1 },
+    { product_id: 4005, size: "L", quantity: 1 },
+  ]);
+  let failed = true;
+  await page.route("**/api/v1/products/4004", (route) =>
+    route.fulfill(failed ? { status: 503, json: {} } : { json: products[3] }),
+  );
+  await page.reload();
+  await page.locator(".basket-button").click();
+  await expect(page.locator(".basket-row")).toHaveCount(7);
+  await expect(page.locator('[data-basket-product="9999"]')).toContainText(
+    "Товар №9999",
+  );
+  await expect(page.locator('[data-basket-product="9999"]')).toContainText(
+    "Товар не найден",
+  );
+  await expect(page.locator('[data-basket-product="4004"]')).toContainText(
+    "Не удалось проверить",
+  );
+  await expect(page.locator('[data-basket-size="XXL"]')).toContainText(
+    "Выбранный размер недоступен",
+  );
+  await expect(
+    page.locator('[data-basket-product="4001"][data-basket-size=""]'),
+  ).toContainText("Выбранный размер недоступен");
+  await expect(page.locator('[data-basket-product="4005"]')).toContainText(
+    "Выбранный размер недоступен",
+  );
+  await expect(page.locator(".guest-continue")).toBeDisabled();
+  failed = false;
+  await page
+    .locator('[data-basket-product="4004"]')
+    .getByRole("button", { name: "Повторить", exact: true })
+    .click();
+  await expect(page.locator('[data-basket-product="4004"] output')).toHaveText(
+    "2",
+  );
+  await expect(page.locator(".guest-continue")).toBeDisabled();
+  const blockedRows = page.locator(
+    '.basket-row:not([data-basket-product="4004"])',
+  );
+  while (await blockedRows.count())
+    await blockedRows.first().locator(".basket-remove").click();
+  await expect(page.locator(".basket-row")).toHaveCount(1);
+  await expect(page.locator(".guest-continue")).toBeEnabled();
+});
+
+test("late public reads cannot resurrect removals, undo quantities or apply a previous language", async ({
+  page,
+}) => {
+  await fixture(page);
+  await seedGuestBasket(page, [{ product_id: 4004, size: null, quantity: 2 }]);
+  const held: (() => Promise<void>)[] = [];
+  await page.route("**/api/v1/products/4004", async (route) => {
+    if (route.request().headers()["x-language"] === "ru") {
+      await new Promise<void>((resolve) =>
+        held.push(async () => {
+          await route
+            .fulfill({ json: { ...products[3], name: "Old RU result" } })
+            .catch(() => {});
+          resolve();
+        }),
+      );
+    } else
+      await route.fulfill({
+        json: { ...products[3], name: "Fresh UZ result" },
+      });
+  });
+  await page.reload();
+  await expect.poll(() => held.length).toBe(1);
+  await page.locator(".basket-button").click();
+  await expect(page.locator(".basket-row")).toContainText("Проверяем товар");
+  await expect(page.locator(".guest-continue")).toBeDisabled();
+  await page.locator(".basket-remove").click();
+  await held[0]?.();
+  await expect(page.locator(".basket-row")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.locator(ordinaryCard + " .add").click();
+  await expect(page.locator(ordinaryCard + " output")).toHaveText("1");
+  await page.reload();
+  await expect.poll(() => held.length).toBe(2);
+  // A native Add while restoration is pending changes the original quantity.
+  await page.locator(ordinaryCard + " .add").click();
+  await page.locator(ordinaryCard + " [data-more]").click();
+  await held[1]?.();
+  await expect(page.locator(ordinaryCard + " output")).toHaveText("3");
+  await page.reload();
+  await expect.poll(() => held.length).toBe(3);
+  await page.locator(".basket-button").click();
+  await page.locator('.basket-languages [lang="uz"]').click();
+  await expect(page.locator(".basket-name")).toHaveText("Fresh UZ result");
+  await held[2]?.();
+  await expect(page.locator(".basket-name")).toHaveText("Fresh UZ result");
+  await expect(page.locator(".basket-panel output")).toHaveText("3");
 });

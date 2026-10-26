@@ -1,0 +1,74 @@
+.account .brand {
+  font-size: 25px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-decoration: none;
+  color: #20553f;
+}
+.account section {
+  max-width: 580px;
+  margin: 60px auto 24px;
+  background: #fff;
+  padding: 40px;
+  border-radius: 24px;
+  box-shadow: 0 12px 50px #173f2910;
+}
+.account h1 {
+  font-size: 36px;
+  line-height: 1.15;
+  margin: 12px 0 20px;
+}
+.account p {
+  line-height: 1.6;
+  color: #4d655a;
+}
+.account .eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 12px;
+  font-weight: 700;
+}
+.account button,
+.account .button {
+  display: inline-block;
+  background: #235e44;
+  color: white;
+  padding: 14px 20px;
+  border: 0;
+  border-radius: 12px;
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  margin: 6px 8px 6px 0;
+}
+.account button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.account .secondary {
+  background: #eaf0e9;
+  color: #235e44;
+}
+.account img {
+  display: block;
+  margin: 20px 0;
+}
+.account footer {
+  font-size: 13px;
+  text-align: center;
+  color: #617469;
+}
+.account [role="alert"] {
+  background: #fff2db;
+  padding: 12px;
+  border-radius: 10px;
+}
+@media (max-width: 600px) {
+  .account section {
+    margin: 36px auto 20px;
+    padding: 26px 22px;
+  }
+  .account h1 {
+    font-size: 30px;
+  }
+}

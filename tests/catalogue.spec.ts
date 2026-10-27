@@ -46,9 +46,9 @@ test("complete discovery, bounded Home, server paging/search and canonical nativ
   ).toBeVisible();
   await expect(page.locator(".product-text b")).toHaveCount(0);
   await expect(page.getByText("Доступные размеры: L, XL")).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: "Смотреть видео" }),
-  ).toHaveAttribute("href", "https://video.example.test/exact/watch?v=17");
+  // A non-YouTube video link has no embed and no longer opens externally.
+  await expect(page.getByText("Смотреть видео")).toHaveCount(0);
+  await expect(page.locator(".product-video")).toHaveCount(0);
   await page
     .getByRole("button", { name: "Изображение 2", exact: true })
     .click();

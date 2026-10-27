@@ -73,9 +73,9 @@ export const products = Array.from({ length: 45 }, (_, i) => ({
     i === 0
       ? "https://video.example.test/exact/watch?v=17"
       : "javascript:alert(1)",
-  additional_info_title: null,
+  additional_info_title: null as string | null,
   additional_info: i === 0 ? "API information" : null,
-  disclaimer: null,
+  disclaimer: null as string | null,
 }));
 export const banners = [
   {
@@ -203,7 +203,7 @@ export async function fixture(
     controls.requests.push(u);
     const n = Number(u.searchParams.get("page")),
       size = Number(u.searchParams.get("size"));
-    expect([8, 20, 100]).toContain(size);
+    expect([6, 8, 20, 100]).toContain(size);
     expect(u.searchParams.has("limit")).toBe(false);
     expect(u.searchParams.has("category")).toBe(false);
     expect(route.request().headers()["x-language"]).toMatch(/^(ru|uz)$/);

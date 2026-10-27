@@ -74,6 +74,9 @@
   /* Basket sample count: muted warm red, independent of action/error roles. */
   --bt-badge-background: #a45149;
   --bt-badge-foreground: var(--bt-text-inverse);
+  /* Product disclaimer note: pale amber like the Mini App note box. */
+  --bt-note-background: #f6efdf;
+  --bt-note-border: #e6cf9a;
   --bt-disabled-surface: #eeeeee;
   --bt-disabled-text: #767676;
   --bt-focus: var(--bt-action);

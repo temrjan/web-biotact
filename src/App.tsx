@@ -9,7 +9,13 @@ import Account from "./Account";
 import Assistant, { type BeforeAdd } from "./Assistant";
 import SizePicker from "./SizePicker";
 import Hero from "./Hero";
-import { CompanyFooter, Consultation, Faq, Video } from "./HomeSections";
+import {
+  CompanyFooter,
+  Consultation,
+  Faq,
+  Video,
+  VideoPlayer,
+} from "./HomeSections";
 import Basket, {
   basketCopy,
   CartIcon,
@@ -63,8 +69,9 @@ const copy = {
       "Товары для жизни",
     ],
     missing: "Недоступно",
-    searchNote:
-      "Поиск по русскому названию. Символы % и _ работают как шаблоны поиска.",
+    previousItems: "Предыдущие товары",
+    nextItems: "Следующие товары",
+    recommended: "Рекомендуемые продукты",
     gallery: "Изображение",
     ai: "ИИ-консультант",
     aiShort: "ИИ · помощь",
@@ -114,8 +121,9 @@ const copy = {
       "Hayot uchun mahsulotlar",
     ],
     missing: "Mavjud emas",
-    searchNote:
-      "Ruscha nom boʻyicha qidirish. % va _ belgilaridan qidiruv andozasi sifatida foydalaniladi.",
+    previousItems: "Oldingi mahsulotlar",
+    nextItems: "Keyingi mahsulotlar",
+    recommended: "Tavsiya etilgan mahsulotlar",
     gallery: "Rasm",
     ai: "AI-maslahatchi",
     aiShort: "AI · yordam",
@@ -356,18 +364,113 @@ function Recovery({ lang, title }: { lang: api.Language; title: string }) {
     </div>
   );
 }
+/** Scroll state of one horizontal product row, for its header arrows. */
+function useSlider() {
+  const [row, setRow] = useState<HTMLDivElement | null>(null);
+  const [edges, setEdges] = useState({
+    overflow: false,
+    start: true,
+    end: true,
+  });
+  useEffect(() => {
+    if (!row) return;
+    const measure = () => {
+      const max = row.scrollWidth - row.clientWidth;
+      const next = {
+        overflow: max > 1,
+        start: row.scrollLeft <= 1,
+        end: row.scrollLeft >= max - 1,
+      };
+      setEdges((current) =>
+        current.overflow === next.overflow &&
+        current.start === next.start &&
+        current.end === next.end
+          ? current
+          : next,
+      );
+    };
+    // The first observation also measures the row once it is in the layout.
+    const observer = new ResizeObserver(measure);
+    observer.observe(row);
+    row.addEventListener("scroll", measure, { passive: true });
+    return () => {
+      observer.disconnect();
+      row.removeEventListener("scroll", measure);
+    };
+  }, [row]);
+  return {
+    ...edges,
+    attach: setRow,
+    scroll(direction: -1 | 1) {
+      if (!row) return;
+      row.scrollBy({
+        left: direction * row.clientWidth,
+        behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+      });
+    },
+  };
+}
+type Slider = ReturnType<typeof useSlider>;
+/** Row header controls: arrows only when the row overflows, then the optional "view all" pill. */
+function SliderControls({
+  slider,
+  rowId,
+  lang,
+  more,
+}: {
+  slider: Slider;
+  rowId: string;
+  lang: api.Language;
+  more?: string;
+}) {
+  const t = copy[lang];
+  return (
+    <div className="slider-controls">
+      {slider.overflow &&
+        ([-1, 1] as const).map((direction) => {
+          const disabled = direction < 0 ? slider.start : slider.end;
+          return (
+            <button
+              key={direction}
+              type="button"
+              className="slider-arrow"
+              aria-label={direction < 0 ? t.previousItems : t.nextItems}
+              aria-controls={rowId}
+              aria-disabled={disabled}
+              onClick={() => {
+                if (!disabled) slider.scroll(direction);
+              }}
+            >
+              <span aria-hidden="true">{direction < 0 ? "←" : "→"}</span>
+            </button>
+          );
+        })}
+      {more && (
+        <a className="view-all" href={more}>
+          {t.viewAll}
+        </a>
+      )}
+    </div>
+  );
+}
 function ProductRow({
   products,
   lang,
   lines,
   change,
   chooseSize,
+  id,
+  rowRef,
 }: CardPurchases & {
   products: api.Product[];
   lang: api.Language;
+  id: string;
+  rowRef: (node: HTMLDivElement | null) => void;
 }) {
   return (
-    <div className="product-row">
+    <div className="product-row" id={id} ref={rowRef}>
       {products.map((p) => (
         <Card
           key={p.id}
@@ -393,10 +496,10 @@ function CategoryRow({
   title: string;
   lang: api.Language;
 }) {
-  const t = copy[lang];
   const read = useRead(`${lang}:${category.id}`, (s) =>
     api.products(lang, s, 1, 8, category.id),
   );
+  const slider = useSlider();
   // The Mini App hides a category section without products.
   if (read.result.status === "ready" && !read.result.data.items.length)
     return null;
@@ -407,22 +510,25 @@ function CategoryRow({
       data-category={category.slug}
       aria-labelledby={id}
     >
-      <div className="section-head">
+      <div className="section-head slider-head">
         <h2 id={id}>{title}</h2>
-        <a
-          href={href({
+        <SliderControls
+          slider={slider}
+          rowId={`${id}-row`}
+          lang={lang}
+          more={href({
             view: "catalogue",
             lang,
             page: 1,
             category: category.id,
           })}
-        >
-          {t.viewAll} →
-        </a>
+        />
       </div>
       <State result={read.result} lang={lang} retry={read.retry}>
         {read.result.status === "ready" && (
           <ProductRow
+            id={`${id}-row`}
+            rowRef={slider.attach}
             products={read.result.data.items}
             lang={lang}
             lines={lines}
@@ -454,6 +560,7 @@ function Home({
     Promise.all([api.banners(lang, s), api.bannerInterval(s)]),
   );
   const sale = useRead(lang, (s) => api.saleProducts(lang, s));
+  const saleSlider = useSlider();
   const ready = categories.status === "ready" ? categories.data : [];
   return (
     <>
@@ -478,10 +585,17 @@ function Home({
           data-category="sale"
           aria-labelledby="home-sale"
         >
-          <div className="section-head">
+          <div className="section-head slider-head">
             <h2 id="home-sale">{t.sales}</h2>
+            <SliderControls
+              slider={saleSlider}
+              rowId="home-sale-row"
+              lang={lang}
+            />
           </div>
           <ProductRow
+            id="home-sale-row"
+            rowRef={saleSlider.attach}
             products={sale.result.data}
             lang={lang}
             lines={lines}
@@ -574,7 +688,6 @@ function Catalogue({
                     {t.search}: «{loc.q}»
                   </p>
                 )}
-                <p className="muted search-note">{t.searchNote}</p>
                 <State result={data.result} lang={lang} retry={data.retry}>
                   {data.result.status === "ready" && (
                     <>
@@ -625,12 +738,76 @@ function Catalogue({
     </>
   );
 }
+/** Admin text with the Mini App's **bold** markup; everything else stays plain text. */
+function RichText({ text }: { text: string }) {
+  return text
+    .split(/(\*\*[^*]+\*\*)/g)
+    .map((part, i) =>
+      part.length > 4 && part.startsWith("**") && part.endsWith("**") ? (
+        <strong key={i}>{part.slice(2, -2)}</strong>
+      ) : (
+        part
+      ),
+    );
+}
+/** Mini App "similar products": up to five others of the same category, hidden otherwise. */
+function Recommended({
+  product,
+  lang,
+  lines,
+  change,
+  chooseSize,
+}: CardPurchases & { product: api.Product; lang: api.Language }) {
+  const t = copy[lang];
+  const category = product.category_id;
+  const read = useRead(
+    `${lang}:${category}:${product.id}`,
+    (s) => api.products(lang, s, 1, 6, category ?? undefined),
+    category !== null,
+  );
+  const slider = useSlider();
+  if (read.result.status !== "ready") return null;
+  const items = read.result.data.items
+    .filter((item) => item.id !== product.id && item.category_id === category)
+    .slice(0, 5);
+  if (!items.length) return null;
+  return (
+    <section
+      className="home-section product-recommended"
+      aria-labelledby="product-recommended"
+      onClickCapture={(e) => {
+        // As in the Mini App, an opened recommendation starts at the top of its page.
+        if (e.target instanceof Element && e.target.closest("a[href]"))
+          window.scrollTo(0, 0);
+      }}
+    >
+      <div className="section-head slider-head">
+        <h2 id="product-recommended">{t.recommended}</h2>
+        <SliderControls
+          slider={slider}
+          rowId="product-recommended-row"
+          lang={lang}
+        />
+      </div>
+      <ProductRow
+        id="product-recommended-row"
+        rowRef={slider.attach}
+        products={items}
+        lang={lang}
+        lines={lines}
+        change={change}
+        chooseSize={chooseSize}
+      />
+    </section>
+  );
+}
 function Product({
   loc,
   categories,
   lines,
   change,
-}: Purchases & {
+  chooseSize,
+}: CardPurchases & {
   loc: Location;
   categories: Read<api.Category[]>;
 }) {
@@ -669,7 +846,7 @@ function Product({
     categories.status === "ready"
       ? categories.data.find((item) => item.id === p.category_id)
       : undefined;
-  const video = api.safeMedia(p.video_url, true);
+  const video = api.youtubeId(p.video_url);
   return (
     <>
       <nav className="breadcrumbs" aria-label={t.catalogue}>
@@ -745,19 +922,16 @@ function Product({
               onChange={(delta) => change(p, size, delta)}
             />
           </div>
-          {video && (
-            <a href={video} target="_blank" rel="noopener noreferrer">
-              {t.video} ↗
-            </a>
+          {p.description && (
+            <section className="product-text product-description">
+              <h2>{t.description}</h2>
+              <p>
+                <RichText text={p.description} />
+              </p>
+            </section>
           )}
         </div>
       </div>
-      {p.description && (
-        <section className="product-text">
-          <h2>{t.description}</h2>
-          <p>{p.description}</p>
-        </section>
-      )}
       {p.advantages.length > 0 && (
         <section className="product-text">
           <h2>{t.advantages}</h2>
@@ -771,15 +945,34 @@ function Product({
       {p.additional_info && (
         <section className="product-text">
           <h2>{p.additional_info_title || t.info}</h2>
-          <p>{p.additional_info}</p>
+          <p>
+            <RichText text={p.additional_info} />
+          </p>
         </section>
       )}
       {p.disclaimer && (
-        <section className="product-text">
-          <h2>{t.disclaimer}</h2>
-          <p>{p.disclaimer}</p>
+        <section className="product-text product-note-section">
+          <p className="product-note" role="note" aria-label={t.disclaimer}>
+            {p.disclaimer}
+          </p>
         </section>
       )}
+      {video && (
+        <section className="product-text product-video" aria-label={t.video}>
+          <VideoPlayer
+            videoId={video}
+            label={`${t.video}: ${p.name}`}
+            frameTitle={`${p.name} · YouTube`}
+          />
+        </section>
+      )}
+      <Recommended
+        product={p}
+        lang={lang}
+        lines={lines}
+        change={change}
+        chooseSize={chooseSize}
+      />
     </>
   );
 }
@@ -880,7 +1073,10 @@ export default function App() {
     const card = sizeOrigin.current;
     sizeOrigin.current = null;
     requestAnimationFrame(() => {
-      const target = origin.current;
+      let target = origin.current;
+      // The basket button moves between the side menu and the top bar at the breakpoint.
+      if (target && !target.isConnected && target.matches(".basket-button"))
+        target = document.querySelector<HTMLElement>(".basket-button");
       if (
         target?.getClientRects().length &&
         !target.closest("dialog:not([open])")
@@ -1008,7 +1204,23 @@ export default function App() {
           ? `${t.product} №${loc.id}`
           : t.publicContext;
   const all = href({ view: "catalogue", lang: loc.lang, page: 1 });
-  const navigation = (
+  const basketButton = (
+    <button
+      className="basket-button"
+      aria-label={`${basketCopy[loc.lang].title}${units ? ` · ${units}` : ""}`}
+      onClick={(e) => show("basket", e.currentTarget)}
+    >
+      <CartIcon />
+      <span className="basket-label">{basketCopy[loc.lang].title}</span>
+      {units > 0 && (
+        <span className="basket-badge" aria-hidden="true">
+          {units}
+        </span>
+      )}
+    </button>
+  );
+  // The basket sits in the visible side menu on desktop and in the top bar on phones.
+  const navigation = (sidebar: boolean) => (
     <>
       <a
         className="brand"
@@ -1047,16 +1259,11 @@ export default function App() {
                 >
                   {c.name}
                 </a>
-              ) : (
+              ) : cats.result.status === "ready" ? (
                 <span key={slug} className="muted">
-                  {t.groups[i]} —{" "}
-                  {cats.result.status === "ready"
-                    ? t.missing
-                    : cats.result.status === "error"
-                      ? t.error
-                      : t.loading}
+                  {t.groups[i]} — {t.missing}
                 </span>
-              );
+              ) : null;
             })}
           </div>
         )}
@@ -1069,6 +1276,7 @@ export default function App() {
           {t.ai}
           <span aria-hidden="true">↗</span>
         </button>
+        {sidebar && !compact && basketButton}
         <a
           aria-current={loc.view === "account" ? "page" : undefined}
           href={href({ view: "account", lang: loc.lang, page: 1 })}
@@ -1090,7 +1298,7 @@ export default function App() {
       >
         {t.catalogue} ↓
       </a>
-      <aside className="sidebar">{navigation}</aside>
+      <aside className="sidebar">{navigation(true)}</aside>
       <dialog
         ref={dialog}
         className="drawer"
@@ -1110,7 +1318,7 @@ export default function App() {
         <button className="drawer-close" data-initial-focus onClick={dismiss}>
           {t.close} ×
         </button>
-        {navigation}
+        {navigation(false)}
       </dialog>
       <div className="workspace">
         <header className="topbar">
@@ -1130,19 +1338,7 @@ export default function App() {
             >
               {t.aiShort}
             </button>
-            <button
-              className="basket-button"
-              aria-label={`${basketCopy[loc.lang].title}${units ? ` · ${units}` : ""}`}
-              onClick={(e) => show("basket", e.currentTarget)}
-            >
-              <CartIcon />
-              <span className="basket-label">{basketCopy[loc.lang].title}</span>
-              {units > 0 && (
-                <span className="basket-badge" aria-hidden="true">
-                  {units}
-                </span>
-              )}
-            </button>
+            {compact && basketButton}
             <a href={href({ view: "account", lang: loc.lang, page: 1 })}>
               {t.account}
             </a>
@@ -1195,6 +1391,7 @@ export default function App() {
               categories={cats.result}
               lines={lines}
               change={changeQuantity}
+              chooseSize={chooseSize}
             />
           )}
           {loc.view === "account" && <Account lang={loc.lang} />}

@@ -8,6 +8,7 @@ import {
   product,
   saleProducts,
   safeMedia,
+  youtubeId,
   price,
   money,
   DEFAULT_BANNER_INTERVAL,
@@ -107,6 +108,28 @@ test("safe media retains HTTPS authority/path and rejects executable and network
   ])
     expect(safeMedia(s)).toBeNull();
   expect(safeMedia("/video/a", true)).toBeNull();
+});
+test("product video links give an embeddable YouTube ID only for YouTube addresses", () => {
+  for (const [link, id] of [
+    ["https://youtu.be/avRmBAElLYQ", "avRmBAElLYQ"],
+    ["https://youtu.be/d-O7SD2Z6Nw?si=x", "d-O7SD2Z6Nw"],
+    ["https://www.youtube.com/watch?v=loU8hZKb_gU&t=4", "loU8hZKb_gU"],
+    ["https://m.youtube.com/watch?v=loU8hZKb_gU", "loU8hZKb_gU"],
+    ["https://www.youtube.com/embed/MaA4Rtf9ZXA", "MaA4Rtf9ZXA"],
+  ] as const)
+    expect(youtubeId(link)).toBe(id);
+  for (const link of [
+    null,
+    "",
+    "http://youtu.be/avRmBAElLYQ",
+    "javascript:alert(1)",
+    "https://video.example.test/exact/watch?v=17",
+    "https://youtu.be.example.test/avRmBAElLYQ",
+    "https://youtu.be/short",
+    "https://www.youtube.com/watch?v=avRmBAElLYQ%22",
+    "https://www.youtube.com/channel/avRmBAElLYQ",
+  ])
+    expect(youtubeId(link)).toBeNull();
 });
 test("hash contract restores identity/filter/page and URLSearchParams encodes literal search", () => {
   const loc = parseLocation("#catalogue?category=301&q=A%26B&page=2&lang=uz");

@@ -21,6 +21,13 @@ async function noOverflow(page: Page) {
 async function dialogCount(page: Page, count: number) {
   await expect(page.locator("dialog[open]")).toHaveCount(count);
 }
+/** Reach a control by keyboard so :focus-visible applies after earlier pointer input. */
+async function keyboardFocus(control: Locator) {
+  await control.focus();
+  await control.page().keyboard.press("Tab");
+  await control.page().keyboard.press("Shift+Tab");
+  await greenFocus(control);
+}
 async function greenFocus(control: Locator) {
   await control.focus();
   await expect(control).toBeFocused();
@@ -1237,9 +1244,18 @@ test("Home sections: sale, Mini App category rows, lazy video, FAQ accordion, co
   expect(page.url()).toMatch(/\/$/);
 
   const footer = page.locator(".page-footer");
-  await expect(footer).toContainText(
-    "100009, г. Ташкент, Юнусабадский район, МФЙ «Шарк хакикати», улица Янгикурган, 1-й тупик, дом 90",
-  );
+  // Captain P1: two address lines, then the phone line, then the e-mail line.
+  await expect(footer.locator('[aria-labelledby="footer-uz"] p')).toHaveText([
+    "100009, г. Ташкент, Юнусабадский район,",
+    "МФЙ «Шарк хакикати», улица Янгикурган, 1-й тупик, дом 90",
+    "Тел.: (+998 93) 555 17 47",
+    "E-Mail: contact_uz@biotact.de",
+  ]);
+  for (const link of await footer.locator("a").all()) {
+    await expect(link).toHaveCSS("text-decoration-line", "none");
+    await expect(link).toHaveCSS("color", "rgb(12, 61, 43)");
+  }
+  await keyboardFocus(footer.locator("a").first());
   await expect(footer).not.toContainText("Фаробий");
   await expect(
     footer.getByRole("link", { name: "(+998 93) 555 17 47" }),
@@ -1264,7 +1280,7 @@ test("Home sections: sale, Mini App category rows, lazy video, FAQ accordion, co
   );
   await expect(
     page.locator('[data-category="product"] .section-head a'),
-  ).toHaveText("Hammasini ko'rish →");
+  ).toHaveText("Hammasini ko'rish");
   await expect(video.locator("h2")).toHaveText(
     "Probiotiklar va vitamin-mineral komplekslar",
   );
@@ -1281,8 +1297,13 @@ test("Home sections: sale, Mini App category rows, lazy video, FAQ accordion, co
   await expect(form.getByRole("status")).toHaveText(
     "Shakl tez orada ishga tushadi. Bizga qo'ng'iroq qiling: +998 93 555 17 47",
   );
-  await expect(footer).toContainText(
-    "100009, Toshkent shahri, Yunusobod tumani, Sharq haqiqati MFY, Yangiqo'rg'on ko'chasi, 1-tor ko'cha, 90-uy",
+  await expect(
+    footer.locator('[aria-labelledby="footer-uz"] p').first(),
+  ).toHaveText("100009, Toshkent shahri, Yunusobod tumani,");
+  await expect(
+    footer.locator('[aria-labelledby="footer-uz"] p').nth(1),
+  ).toHaveText(
+    "Sharq haqiqati MFY, Yangiqo'rg'on ko'chasi, 1-tor ko'cha, 90-uy",
   );
   await page.locator('[data-category="product"] .section-head a').click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
@@ -1728,4 +1749,338 @@ test("late public reads cannot resurrect removals, undo quantities or apply a pr
   await held[2]?.();
   await expect(page.locator(".basket-name")).toHaveText("Fresh UZ result");
   await expect(page.locator(".basket-panel output")).toHaveText("3");
+});
+
+test("Home rows scroll with header arrows and no scrollbar; catalogue tabs read as headings without the search note", async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/");
+  const popular = page.locator('[data-category="product"]');
+  const row = popular.locator(".product-row");
+  await expect(row.locator("article")).toHaveCount(8);
+  await expect(row).toHaveCSS("scrollbar-width", "none");
+  expect(
+    await row.evaluate((n) => (n as HTMLElement).offsetHeight - n.clientHeight),
+  ).toBe(0);
+  const previous = popular.getByRole("button", { name: "Предыдущие товары" });
+  const next = popular.getByRole("button", { name: "Следующие товары" });
+  await expect(
+    popular.locator(".section-head .slider-controls > *"),
+  ).toHaveCount(3);
+  await expect(popular.locator(".view-all")).toHaveText("Смотреть все");
+  await expect(next).toHaveAttribute("aria-controls", "home-product-row");
+  await expect(previous).toBeDisabled();
+  await expect(next).toBeEnabled();
+  // A disabled arrow does nothing.
+  await previous.click({ force: true });
+  expect(await row.evaluate((n) => n.scrollLeft)).toBe(0);
+  await next.click();
+  await expect.poll(() => row.evaluate((n) => n.scrollLeft)).toBeGreaterThan(0);
+  // Four of eight cards are visible: one step reaches the end.
+  await expect(next).toBeDisabled();
+  await expect(previous).toBeEnabled();
+  await expect.poll(() => visibleCards(row)).toBe(4);
+  await expect(row.locator('[data-product-id="4005"]')).toBeInViewport();
+  await previous.click();
+  await expect.poll(() => row.evaluate((n) => n.scrollLeft)).toBe(0);
+  await expect(previous).toBeDisabled();
+  // Swiping/trackpad scrolling still works and updates the arrows.
+  await row.evaluate((n) => n.scrollBy({ left: 400 }));
+  await expect(previous).toBeEnabled();
+  // The single sale product does not overflow: no arrows, no "view all".
+  const sale = page.locator('[data-category="sale"]');
+  await expect(sale.locator(".slider-arrow")).toHaveCount(0);
+  await expect(sale.locator(".view-all")).toHaveCount(0);
+  await popular.locator(".view-all").click();
+  await expect(page).toHaveURL(/#catalogue\?category=301&page=1&lang=ru$/);
+
+  const tabs = page.locator(".filter-row a");
+  const current = page.locator('.filter-row a[aria-current="page"]');
+  await expect(current).toHaveText("Нутриенты");
+  await expect(current).toHaveCSS("color", "rgb(12, 61, 43)");
+  await expect(current).toHaveCSS("text-decoration-line", "underline");
+  for (const tab of [current, tabs.first()]) {
+    await expect(tab).toHaveCSS("border-top-style", "none");
+    await expect(tab).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  }
+  await expect(tabs.first()).toHaveCSS("text-decoration-line", "none");
+  await tabs.first().hover();
+  await expect(tabs.first()).toHaveCSS("text-decoration-line", "underline");
+  await keyboardFocus(tabs.first());
+  await expect(page.getByText(/Поиск по русскому названию/)).toHaveCount(0);
+  await expect(page.locator(".search-note")).toHaveCount(0);
+  await page.goto("/#catalogue?page=1&lang=uz");
+  await expect(page.locator(".product-grid article")).toHaveCount(20);
+  await expect(page.getByText(/Ruscha nom/)).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/#home?lang=uz");
+  const compact = page.locator('[data-category="product"]');
+  await expect(compact.locator("article")).toHaveCount(8);
+  await expect(
+    compact.getByRole("button", { name: "Keyingi mahsulotlar" }),
+  ).toBeEnabled();
+  await expect(
+    compact.getByRole("button", { name: "Oldingi mahsulotlar" }),
+  ).toBeDisabled();
+  await expect(compact.locator(".view-all")).toHaveText("Hammasini ko'rish");
+  await noOverflow(page);
+});
+
+test("side menu shows no per-item loading or error text; the page keeps its own retry", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/api/v1/categories?*", async (route) => {
+    await held;
+    await route.fallback();
+  });
+  await page.goto("/");
+  const menu = page.locator(".sidebar .category-nav");
+  await expect(page.getByRole("status").first()).toHaveText("Загружаем…");
+  await expect(menu).toHaveText("Все товары");
+  await expect(menu.locator("a")).toHaveCount(1);
+  f.categoryFailure = "status";
+  release();
+  await expect(page.getByRole("alert")).toContainText(
+    "Не удалось загрузить данные",
+  );
+  await expect(menu).toHaveText("Все товары");
+  await expect(page.locator(".sidebar")).not.toContainText("Не удалось");
+  delete f.categoryFailure;
+  await page.getByRole("button", { name: "Повторить", exact: true }).click();
+  await expect(menu.locator("a")).toHaveText([
+    "Все товары",
+    "Нутриенты",
+    "Наборы",
+    "Техника",
+  ]);
+  // A category absent from the API keeps its existing "unavailable" line.
+  await expect(menu.locator("span")).toHaveText(
+    "Товары для жизни — Недоступно",
+  );
+});
+
+test("basket sits in the side menu on desktop and in the sticky top bar on phones", async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/#catalogue?page=1&lang=ru");
+  await expect(page.locator(".product-grid article")).toHaveCount(20);
+  await expect(page.locator(".basket-button")).toHaveCount(1);
+  const sideBasket = page.locator(".sidebar .basket-button");
+  expect(
+    await sideBasket.evaluate((n) =>
+      n.previousElementSibling?.classList.contains("ai-nav"),
+    ),
+  ).toBe(true);
+  await expect(page.locator(".topbar .basket-button")).toHaveCount(0);
+  await expect(page.locator(".topbar .top-ai")).toBeVisible();
+  await page
+    .locator('.product-grid [data-product-id="4020"]')
+    .scrollIntoViewIfNeeded();
+  expect(await page.evaluate(() => scrollY)).toBeGreaterThan(500);
+  await page.locator('.product-grid [data-product-id="4020"] .add').click();
+  await expect(sideBasket.locator(".basket-badge")).toHaveText("1");
+  await expect(sideBasket).toBeInViewport();
+  await expect(sideBasket).toHaveAccessibleName("Корзина · 1");
+  await sideBasket.click();
+  await dialogCount(page, 1);
+  await expect(page.locator(".basket-row")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(sideBasket).toBeFocused();
+  await page.locator(".topbar .top-ai").click();
+  await expect(page.locator(".assistant-panel")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".assistant-panel")).toBeHidden();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/#catalogue?page=1&lang=uz");
+  await expect(page.locator(".product-grid article")).toHaveCount(20);
+  await expect(page.locator(".basket-button")).toHaveCount(1);
+  const topBasket = page.locator(".topbar .basket-button");
+  await expect(topBasket).toBeVisible();
+  await expect(
+    page.locator(".sidebar .basket-button, .drawer .basket-button"),
+  ).toHaveCount(0);
+  await page
+    .locator('.product-grid [data-product-id="4020"]')
+    .scrollIntoViewIfNeeded();
+  expect(await page.evaluate(() => scrollY)).toBeGreaterThan(1000);
+  await expect(page.locator(".topbar")).toHaveCSS("position", "sticky");
+  expect((await page.locator(".topbar").boundingBox())?.y).toBe(0);
+  await page.locator('.product-grid [data-product-id="4019"] .add').click();
+  await expect(topBasket.locator(".basket-badge")).toHaveText("2");
+  await expect(topBasket).toBeInViewport();
+  // The sticky bar stays above cards and their sale badges.
+  const hit = await topBasket.evaluate((n) => {
+    const r = n.getBoundingClientRect();
+    return n.contains(
+      document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2),
+    );
+  });
+  expect(hit).toBe(true);
+  await topBasket.click();
+  await dialogCount(page, 1);
+  await page.keyboard.press("Escape");
+  await expect(topBasket).toBeFocused();
+  await noOverflow(page);
+});
+
+test("product page follows the Mini App: description, composition, disclaimer note, embedded video and recommended slider", async ({
+  page,
+}) => {
+  const source = products.map((p, i) =>
+    i === 0
+      ? {
+          ...p,
+          description:
+            "**Ключевые компоненты** в одной формуле\nВторая строка <b>как текст</b>",
+          additional_info_title: "Состав:",
+          additional_info: "1 капсула содержит:\n\n**Витамин C** - 250 мг",
+          disclaimer: "БАД. Не является лекарственным средством.",
+          video_url: "https://youtu.be/avRmBAElLYQ",
+        }
+      : p,
+  );
+  const f = await fixture(page, source);
+  const requests: string[] = [];
+  page.on("request", (r) => requests.push(r.method() + " " + r.url()));
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/#product?id=4001&lang=ru");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+    "Synthetic Match 01",
+  );
+  const description = page.locator(".product-summary .product-description");
+  await expect(description.locator("h2")).toHaveText("Описание");
+  await expect(description.locator("strong")).toHaveText("Ключевые компоненты");
+  await expect(description.locator("p")).toHaveText(
+    "Ключевые компоненты в одной формуле\nВторая строка <b>как текст</b>",
+  );
+  await expect(description.locator("b")).toHaveCount(0);
+  const order = await page
+    .locator("main > section, main > .product-main")
+    .evaluateAll((nodes) =>
+      nodes.map((n) => n.querySelector("h2")?.textContent || n.className),
+    );
+  expect(order).toEqual([
+    "Описание",
+    "Преимущества",
+    "Состав:",
+    "product-text product-note-section",
+    "product-text product-video",
+    "Рекомендуемые продукты",
+  ]);
+  const composition = page.locator(".product-text", {
+    has: page.getByRole("heading", { name: "Состав:" }),
+  });
+  await expect(composition.locator("p")).toHaveText(
+    "1 капсула содержит:\n\nВитамин C - 250 мг",
+  );
+  expect(
+    await composition
+      .locator("p")
+      .evaluate((n) => (n as HTMLElement).innerText),
+  ).toContain("содержит:\n\nВитамин C");
+  const note = page.getByRole("note", { name: "Примечание" });
+  await expect(note).toHaveText("БАД. Не является лекарственным средством.");
+  await expect(note).toHaveCSS("background-color", "rgb(246, 239, 223)");
+  await expect(page.getByRole("link", { name: /Смотреть видео/ })).toHaveCount(
+    0,
+  );
+  const video = page.locator(".product-video");
+  await expect(video.locator("iframe")).toHaveCount(0);
+  expect(requests.some((r) => r.includes("youtube-nocookie"))).toBe(false);
+  await video
+    .getByRole("button", { name: "Смотреть видео: Synthetic Match 01" })
+    .click();
+  await expect(video.locator("iframe")).toHaveAttribute(
+    "src",
+    "https://www.youtube-nocookie.com/embed/avRmBAElLYQ?autoplay=1&rel=0",
+  );
+  await expect(video.locator("iframe")).toHaveAttribute(
+    "referrerpolicy",
+    "strict-origin-when-cross-origin",
+  );
+
+  const recommended = page.locator(".product-recommended");
+  await expect(recommended.locator("h2")).toHaveText("Рекомендуемые продукты");
+  await expect(
+    recommended
+      .locator("article")
+      .evaluateAll((nodes) =>
+        nodes.map((n) => n.getAttribute("data-product-id")),
+      ),
+  ).resolves.toEqual(["4002", "4003", "4004", "4005", "4006"]);
+  expect(
+    f.requests.some(
+      (u) =>
+        u.pathname.endsWith("/products") &&
+        u.searchParams.get("category_id") === "301" &&
+        u.searchParams.get("size") === "6",
+    ),
+  ).toBe(true);
+  const next = recommended.getByRole("button", { name: "Следующие товары" });
+  const previous = recommended.getByRole("button", {
+    name: "Предыдущие товары",
+  });
+  await expect(previous).toBeDisabled();
+  await next.click();
+  await expect(next).toBeDisabled();
+  await expect(previous).toBeEnabled();
+  await previous.click();
+  await expect(previous).toBeDisabled();
+  await expect(recommended.locator(".view-all")).toHaveCount(0);
+  const card = recommended.locator(ordinaryCard);
+  await expect(card.locator(".price strong")).toContainText(/112\s?233,44 UZS/);
+  await card.locator(".add").click();
+  await expect(page.locator(".basket-badge")).toHaveText("1");
+  // On a phone the slider is far down the page; the opened product starts at the top.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await card.locator("h3 a").scrollIntoViewIfNeeded();
+  expect(await page.evaluate(() => scrollY)).toBeGreaterThan(1000);
+  await card.locator("h3 a").click();
+  await expect(page.getByRole("heading", { level: 1 })).toContainText(
+    "Synthetic Match 04",
+  );
+  await expect(page.locator(".product-recommended article")).toHaveCount(5);
+  expect(await page.evaluate(() => scrollY)).toBe(0);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await expect(page.locator(".product-recommended article")).toHaveCount(5);
+  await expect(
+    page.locator('.product-recommended [data-product-id="4004"]'),
+  ).toHaveCount(0);
+  await page.getByRole("link", { name: "UZ", exact: true }).click();
+  await expect(page.locator(".product-recommended h2")).toHaveText(
+    "Tavsiya etilgan mahsulotlar",
+  );
+  // No category: no slider.
+  await page.goto("/#product?id=4045&lang=ru");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText(
+    "Synthetic Match 45",
+  );
+  await expect(page.locator(".product-recommended")).toHaveCount(0);
+  // A failed category read hides the slider; the product stays.
+  await page.route("**/api/v1/products?*", (route) =>
+    route.fulfill({ status: 503, json: {} }),
+  );
+  await page.goto("/#product?id=4001&lang=ru");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+    "Synthetic Match 01",
+  );
+  await expect(page.locator(".product-video")).toBeVisible();
+  await page.waitForTimeout(300);
+  await expect(page.locator(".product-recommended")).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    await noOverflow(page);
+  }
 });

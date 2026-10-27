@@ -80,8 +80,10 @@ const copy = {
     submit: "Получить консультацию",
     notice: "Форма скоро заработает. Позвоните нам:",
     phoneLabel: "Тел.:",
-    address:
-      "100009, г. Ташкент, Юнусабадский район, МФЙ «Шарк хакикати», улица Янгикурган, 1-й тупик, дом 90",
+    address: [
+      "100009, г. Ташкент, Юнусабадский район,",
+      "МФЙ «Шарк хакикати», улица Янгикурган, 1-й тупик, дом 90",
+    ],
     contacts: "Контакты",
   },
   uz: {
@@ -96,48 +98,68 @@ const copy = {
     submit: "Maslahat olish",
     notice: "Shakl tez orada ishga tushadi. Bizga qo'ng'iroq qiling:",
     phoneLabel: "Tel.:",
-    address:
-      "100009, Toshkent shahri, Yunusobod tumani, Sharq haqiqati MFY, Yangiqo'rg'on ko'chasi, 1-tor ko'cha, 90-uy",
+    address: [
+      "100009, Toshkent shahri, Yunusobod tumani,",
+      "Sharq haqiqati MFY, Yangiqo'rg'on ko'chasi, 1-tor ko'cha, 90-uy",
+    ],
     contacts: "Kontaktlar",
   },
 };
 
 /** Click-to-play preview: no YouTube frame loads before the visitor asks for it. */
+export function VideoPlayer({
+  videoId,
+  label,
+  frameTitle,
+}: {
+  videoId: string;
+  label: string;
+  frameTitle: string;
+}) {
+  const [playing, setPlaying] = useState(false);
+  return (
+    <div className="video-frame">
+      {playing ? (
+        <iframe
+          src={`https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0`}
+          title={frameTitle}
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          // The page sends no referrer; YouTube refuses embeds without the origin.
+          referrerPolicy="strict-origin-when-cross-origin"
+          allowFullScreen
+        />
+      ) : (
+        <button
+          type="button"
+          className="video-preview"
+          aria-label={label}
+          onClick={() => setPlaying(true)}
+        >
+          <img
+            src={`https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`}
+            alt=""
+            loading="lazy"
+            decoding="async"
+          />
+          <span className="video-play" aria-hidden="true">
+            ▶
+          </span>
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function Video({ lang }: { lang: Language }) {
   const t = copy[lang];
-  const [playing, setPlaying] = useState(false);
   return (
     <section className="home-section home-video" aria-labelledby="home-video">
       <h2 id="home-video">{t.video}</h2>
-      <div className="video-frame">
-        {playing ? (
-          <iframe
-            src={`https://www.youtube-nocookie.com/embed/${VIDEO_ID}?autoplay=1&rel=0`}
-            title={t.player}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            // The page sends no referrer; YouTube refuses embeds without the origin.
-            referrerPolicy="strict-origin-when-cross-origin"
-            allowFullScreen
-          />
-        ) : (
-          <button
-            type="button"
-            className="video-preview"
-            aria-label={`${t.play}: ${t.video}`}
-            onClick={() => setPlaying(true)}
-          >
-            <img
-              src={`https://i.ytimg.com/vi/${VIDEO_ID}/maxresdefault.jpg`}
-              alt=""
-              loading="lazy"
-              decoding="async"
-            />
-            <span className="video-play" aria-hidden="true">
-              ▶
-            </span>
-          </button>
-        )}
-      </div>
+      <VideoPlayer
+        videoId={VIDEO_ID}
+        label={`${t.play}: ${t.video}`}
+        frameTitle={t.player}
+      />
     </section>
   );
 }
@@ -248,7 +270,9 @@ export function CompanyFooter({ lang }: { lang: Language }) {
       <div className="footer-companies">
         <section aria-labelledby="footer-uz">
           <h2 id="footer-uz">ООО "Biotact"</h2>
-          <p>{t.address}</p>
+          {t.address.map((line) => (
+            <p key={line}>{line}</p>
+          ))}
           <p>
             {t.phoneLabel} <a href="tel:+998935551747">(+998 93) 555 17 47</a>
           </p>

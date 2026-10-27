@@ -371,6 +371,9 @@ test("UZ phone: changed quote needs a new press and key; return without callback
   expect((await server(page)).counters.invoices).toBe(1);
   await page.goBack();
   await page.waitForURL(/\/#order\?lang=uz$/);
+  // The status read of the reloaded view must finish before the callback settles the order.
+  await expect(page.locator(".order-state")).toHaveText("Toʻlov kutilmoqda");
+  await expect(page.locator(".order-pay")).toBeEnabled();
   await control(page, `callback?invoice=${order?.number}`);
   await page
     .getByRole("button", { name: "Holatni tekshirish", exact: true })
@@ -631,6 +634,9 @@ test("payment start failures keep the order usable; 403 re-reads the token; only
   await pay.click();
   await page.waitForURL(/\/__test\/guest\/pay\?invoice=/);
   await page.goto("/#order?lang=ru");
+  // The status read of the loaded view must finish before the one-shot fault is set.
+  await expect(page.locator(".order-state")).toHaveText("Ожидает оплаты");
+  await expect(pay).toBeEnabled();
 
   // A failed status read offers a retry.
   await control(page, "fault?route=order&status=503&error=service_unavailable");

@@ -1,4 +1,17 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
+/** Cards of a home product row that are fully inside its scroll viewport. */
+export function visibleCards(row: Locator) {
+  return row.evaluate((node) => {
+    const box = node.getBoundingClientRect(),
+      style = getComputedStyle(node),
+      left = box.left + parseFloat(style.paddingLeft),
+      right = box.right - parseFloat(style.paddingRight);
+    return [...node.children].filter((child) => {
+      const r = child.getBoundingClientRect();
+      return r.left >= left - 1 && r.right <= right + 1;
+    }).length;
+  });
+}
 export const categories = [
   {
     id: 301,
@@ -64,16 +77,56 @@ export const products = Array.from({ length: 45 }, (_, i) => ({
   additional_info: i === 0 ? "API information" : null,
   disclaimer: null,
 }));
+export const banners = [
+  {
+    id: 6,
+    title: "Баннер 4",
+    title_uz: null,
+    subtitle: null,
+    subtitle_uz: null,
+    image_url: "/synthetic-banner-6.svg",
+    gradient: null,
+    link_url: "/catalog",
+    sort_order: 0,
+    is_active: true,
+  },
+  {
+    id: 5,
+    title: "Синтетический баннер",
+    title_uz: "Sintetik banner",
+    subtitle: null,
+    subtitle_uz: null,
+    image_url: "/synthetic-banner-5.svg",
+    gradient: null,
+    link_url: "/catalog/product",
+    sort_order: 1,
+    is_active: true,
+  },
+  {
+    id: 1,
+    title: "Баннер товара",
+    title_uz: null,
+    subtitle: null,
+    subtitle_uz: null,
+    image_url: "/synthetic-banner-1.svg",
+    gradient: null,
+    link_url: "/product/4004",
+    sort_order: 2,
+    is_active: true,
+  },
+];
 export interface Controls {
   categoryFailure?: "status" | "malformed";
   empty?: boolean;
+  banners: typeof banners;
+  interval: string | null;
   requests: URL[];
 }
 export async function fixture(
   page: Page,
   sourceProducts = products,
 ): Promise<Controls> {
-  const controls: Controls = { requests: [] };
+  const controls: Controls = { requests: [], banners, interval: "4000" };
   await page.route("**/synthetic-*.svg", (route) =>
     route.fulfill({
       contentType: "image/svg+xml",
@@ -83,6 +136,40 @@ export async function fixture(
   await page.route("**/broken-image.png", (route) =>
     route.fulfill({ status: 404, body: "" }),
   );
+  // Video previews and frames are third-party; tests never reach YouTube.
+  await page.route(
+    /^https:\/\/(i\.ytimg\.com|www\.youtube-nocookie\.com)\//,
+    (route) =>
+      route.fulfill(
+        route.request().url().includes("ytimg")
+          ? {
+              contentType: "image/svg+xml",
+              body: '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="1280" height="720" fill="#30403a"/></svg>',
+            }
+          : {
+              contentType: "text/html",
+              body: "<title>synthetic player</title>",
+            },
+      ),
+  );
+  await page.route("**/api/v1/banners?*", async (route) => {
+    const u = new URL(route.request().url());
+    controls.requests.push(u);
+    expect(u.searchParams.get("is_active")).toBe("true");
+    expect(u.searchParams.get("limit")).toBe("100");
+    expect(u.searchParams.get("skip")).toBe("0");
+    await route.fulfill({
+      json: { items: controls.banners, total: controls.banners.length },
+    });
+  });
+  await page.route("**/api/v1/settings/banner_interval", async (route) => {
+    controls.requests.push(new URL(route.request().url()));
+    await route.fulfill(
+      controls.interval === null
+        ? { status: 404, json: { detail: "Not found" } }
+        : { json: { key: "banner_interval", value: controls.interval } },
+    );
+  });
   await page.route("**/api/v1/categories?*", async (route) => {
     const u = new URL(route.request().url()),
       n = Number(u.searchParams.get("page"));
@@ -116,7 +203,7 @@ export async function fixture(
     controls.requests.push(u);
     const n = Number(u.searchParams.get("page")),
       size = Number(u.searchParams.get("size"));
-    expect([4, 20]).toContain(size);
+    expect([8, 20, 100]).toContain(size);
     expect(u.searchParams.has("limit")).toBe(false);
     expect(u.searchParams.has("category")).toBe(false);
     expect(route.request().headers()["x-language"]).toMatch(/^(ru|uz)$/);
@@ -124,6 +211,7 @@ export async function fixture(
       ? []
       : sourceProducts.filter(
           (p) =>
+            (u.searchParams.get("on_sale") !== "true" || p.is_sale) &&
             (!u.searchParams.has("category_id") ||
               p.category_id === Number(u.searchParams.get("category_id"))) &&
             (!u.searchParams.has("search") ||

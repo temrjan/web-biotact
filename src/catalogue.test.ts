@@ -1,13 +1,18 @@
 import { afterEach, expect, test, vi } from "vitest";
 import {
+  banner,
+  bannerInterval,
+  banners,
   categories,
   pageData,
   product,
+  saleProducts,
   safeMedia,
   price,
   money,
+  DEFAULT_BANNER_INTERVAL,
 } from "./catalogue";
-import { parseLocation, href } from "./navigation";
+import { bannerTarget, parseLocation, href } from "./navigation";
 const item = {
   id: 7,
   name: "API product",
@@ -122,4 +127,148 @@ test("hash contract restores identity/filter/page and URLSearchParams encodes li
   ])
     expect(parseLocation(s).view).toBe("invalid");
   expect(parseLocation("")).toEqual({ view: "home", lang: "ru", page: 1 });
+});
+const adminBanner = {
+  id: 6,
+  title: "Баннер 4",
+  title_uz: null,
+  subtitle: null,
+  subtitle_uz: null,
+  image_url: "https://app.biotact.uz/uploads/banners/a.jpg",
+  gradient: null,
+  link_url: "/catalog",
+  sort_order: 0,
+  is_active: true,
+};
+test("admin banners keep server order and language title; unusable images are skipped", async () => {
+  expect(banner(adminBanner, "uz")).toEqual({
+    id: 6,
+    title: "Баннер 4",
+    image_url: "https://app.biotact.uz/uploads/banners/a.jpg",
+    link_url: "/catalog",
+  });
+  expect(banner({ ...adminBanner, title_uz: "Banner" }, "uz")?.title).toBe(
+    "Banner",
+  );
+  expect(banner({ ...adminBanner, title_uz: "Banner" }, "ru")?.title).toBe(
+    "Баннер 4",
+  );
+  for (const image of [null, "javascript:alert(1)", "http://x.test/a.jpg"])
+    expect(banner({ ...adminBanner, image_url: image }, "ru")).toBeNull();
+  for (const override of [
+    { id: 0 },
+    { title: 7 },
+    { sort_order: 1.5 },
+    { is_active: false },
+    { link_url: {} },
+  ])
+    expect(() => banner({ ...adminBanner, ...override }, "ru")).toThrow();
+  const fetch = vi.fn().mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        items: [
+          { ...adminBanner, id: 9, sort_order: 0 },
+          { ...adminBanner, id: 2, sort_order: 1, image_url: null },
+          { ...adminBanner, id: 4, sort_order: 2 },
+        ],
+        total: 3,
+      }),
+    ),
+  );
+  vi.stubGlobal("fetch", fetch);
+  expect(
+    (await banners("ru", new AbortController().signal)).map((b) => b.id),
+  ).toEqual([9, 4]);
+  expect(fetch).toHaveBeenCalledWith(
+    "/api/v1/banners?is_active=true&limit=100&skip=0",
+    expect.objectContaining({ headers: { "X-Language": "ru" } }),
+  );
+  fetch.mockResolvedValue(
+    new Response(JSON.stringify({ items: [adminBanner], total: 2 })),
+  );
+  await expect(banners("ru", new AbortController().signal)).rejects.toThrow();
+});
+test("banner interval uses the admin setting and the Mini App default otherwise", async () => {
+  const signal = new AbortController().signal;
+  for (const [body, status, expected] of [
+    [{ value: "4000" }, 200, 4000],
+    [{ value: "" }, 200, DEFAULT_BANNER_INTERVAL],
+    [{ value: "-5" }, 200, DEFAULT_BANNER_INTERVAL],
+    [{ value: "soon" }, 200, DEFAULT_BANNER_INTERVAL],
+    [{ detail: "Not found" }, 404, DEFAULT_BANNER_INTERVAL],
+  ] as const) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status })),
+    );
+    expect(await bannerInterval(signal)).toBe(expected);
+  }
+  expect(DEFAULT_BANNER_INTERVAL).toBe(3000);
+});
+test("sale products read every on-sale page and reject duplicates", async () => {
+  const sale = (id: number) => ({
+    ...item,
+    id,
+    name: `Sale ${id}`,
+    is_active: true,
+    is_purchasable: true,
+  });
+  const page = (items: unknown[], n: number) =>
+    new Response(
+      JSON.stringify({ items, total: 101, pages: 2, page: n, size: 100 }),
+    );
+  const first = Array.from({ length: 100 }, (_, i) => sale(i + 1));
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(page(first, 1))
+    .mockResolvedValueOnce(page([sale(101)], 2));
+  vi.stubGlobal("fetch", fetch);
+  expect(await saleProducts("uz", new AbortController().signal)).toHaveLength(
+    101,
+  );
+  expect(fetch.mock.calls.map((c) => c[0])).toEqual([
+    "/api/v1/products?on_sale=true&page=1&size=100",
+    "/api/v1/products?on_sale=true&page=2&size=100",
+  ]);
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValueOnce(page(first, 1))
+      .mockResolvedValueOnce(page([sale(1)], 2)),
+  );
+  await expect(
+    saleProducts("uz", new AbortController().signal),
+  ).rejects.toThrow();
+});
+test("banner links map Mini App routes to website views and open only HTTPS externally", () => {
+  const cats = [{ id: 301, slug: "product" }];
+  const target = (link: string | null) => bannerTarget(link, "uz", cats);
+  expect(target("/catalog")).toEqual({
+    href: "/#catalogue?page=1&lang=uz",
+    external: false,
+  });
+  expect(target(null)).toEqual(target("/catalog"));
+  expect(target("  ")).toEqual(target("/catalog"));
+  expect(target("/catalog/product")).toEqual({
+    href: "/#catalogue?category=301&page=1&lang=uz",
+    external: false,
+  });
+  expect(target("/catalog/unknown")).toEqual(target("/catalog"));
+  expect(target("/product/39")).toEqual({
+    href: "/#product?id=39&lang=uz",
+    external: false,
+  });
+  expect(target("/")).toEqual({ href: "/#home?lang=uz", external: false });
+  expect(target("/sales")).toEqual(target("/catalog"));
+  expect(target("https://biotact.uz/ru/")).toEqual({
+    href: "https://biotact.uz/ru/",
+    external: true,
+  });
+  for (const unsafe of [
+    "http://biotact.uz/",
+    "javascript:alert(1)",
+    "https://user:pass@biotact.uz/",
+  ])
+    expect(target(unsafe)).toEqual(target("/catalog"));
 });

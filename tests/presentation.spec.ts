@@ -1,5 +1,5 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import { fixture, products } from "./catalogue.fixture";
+import { fixture, products, visibleCards } from "./catalogue.fixture";
 import { BASKET_STORAGE_KEY } from "../src/guestBasket";
 
 const firstCard = '[data-product-id="4001"]';
@@ -102,7 +102,9 @@ test("Product detail shares nonsized Add, quantity and removal with list, header
     requests.every(
       (r) =>
         r.method === "GET" &&
-        /^\/api\/v1\/(categories|products|products\/\d+)$/.test(r.path),
+        /^\/api\/v1\/(categories|products|products\/\d+|banners|settings\/banner_interval)$/.test(
+          r.path,
+        ),
     ),
   ).toBe(true);
   expect(
@@ -399,11 +401,15 @@ test("accepted footer colors, size variants, availability and remembered basket 
     requests.every(
       (r) =>
         r.method === "GET" &&
-        /^\/api\/v1\/(categories|products|products\/\d+)$/.test(r.path),
+        /^\/api\/v1\/(categories|products|products\/\d+|banners|settings\/banner_interval)$/.test(
+          r.path,
+        ),
     ),
   ).toBe(true);
   await page.locator(".sidebar .brand").click();
-  await expect(page.locator(".home-grid article")).toHaveCount(4);
+  await expect(page.locator('[data-category="product"] article')).toHaveCount(
+    8,
+  );
   const selected = page.locator('.sidebar a[aria-current="page"]');
   await selected.hover();
   await expect(selected).toHaveCSS("background-color", "rgb(221, 221, 221)");
@@ -416,7 +422,9 @@ test("accepted footer colors, size variants, availability and remembered basket 
   await page.locator(ordinaryCard + " .add").click();
   await expect(page.locator(".basket-badge")).toHaveText("1");
   await page.reload();
-  await expect(page.locator(".home-grid article")).toHaveCount(4);
+  await expect(page.locator('[data-category="product"] article')).toHaveCount(
+    8,
+  );
   await expect(page.locator(".basket-badge")).toHaveText("1");
 });
 
@@ -425,8 +433,11 @@ test("compact size popup preserves Home/Catalogue card height, keyboard focus an
 }, testInfo) => {
   const sample = products[0];
   if (!sample) throw new Error("Missing sized fixture");
+  // Not on sale: each product appears once on Home (no separate sale row).
   const source = products.slice(0, 4).map((p, i) => ({
     ...sample,
+    is_sale: false,
+    sale_price: null,
     id: p.id,
     name: `Compact product ${i + 1}`,
     requires_size: i === 0,
@@ -585,7 +596,9 @@ test("AI draft stays local until explicit send and resets on semantic navigation
   });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/");
-  await expect(page.locator(".home-grid article")).toHaveCount(4);
+  await expect(page.locator('[data-category="product"] article')).toHaveCount(
+    8,
+  );
   await page.locator(".sidebar .ai-nav").click();
   await dialogCount(page, 1);
   const panel = page.locator(".assistant-panel");
@@ -615,7 +628,9 @@ test("AI draft stays local until explicit send and resets on semantic navigation
   await expect(page.locator(".sidebar .ai-nav")).toBeFocused();
   await page.locator(".sidebar .ai-nav").click();
   await expect(draft).toHaveValue(/secret-question/);
-  await page.locator(firstCard + " .card-media").click();
+  await page
+    .locator('[data-category="product"] ' + firstCard + " .card-media")
+    .click();
   await expect(page.locator(".product-main")).toBeVisible();
   await expect(panel.locator(".ai-context strong")).toHaveText("Товар №4001");
   await page.locator('.languages [lang="uz"]').click();
@@ -666,14 +681,9 @@ test("AI adapts at 1440/1000/390/320 and enlarged text, modal focus/resize/menu/
   for (const width of [1440, 1000, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/");
-    await expect(page.locator(".home-grid article")).toHaveCount(4);
-    expect(
-      await page
-        .locator(".home-grid")
-        .evaluate(
-          (e) => getComputedStyle(e).gridTemplateColumns.split(" ").length,
-        ),
-    ).toBe(width >= 1000 ? 4 : 2);
+    const row = page.locator('[data-category="product"] .product-row');
+    await expect(row.locator("article")).toHaveCount(8);
+    expect(await visibleCards(row)).toBe(width >= 1000 ? 4 : 2);
     await page.locator(width >= 1000 ? ".sidebar .ai-nav" : ".top-ai").click();
     await dialogCount(page, 1);
     expect(
@@ -767,12 +777,15 @@ test("AI adapts at 1440/1000/390/320 and enlarged text, modal focus/resize/menu/
 });
 
 const heroMain = '.hero-banner[data-position="main"]';
-async function heroSlide(page: Page, title: string) {
+async function heroSlide(page: Page, id: number) {
   await expect(page.locator(".hero-stage")).toHaveAttribute(
     "data-busy",
     "false",
   );
-  await expect(page.locator(heroMain + " h2")).toHaveText(title);
+  await expect(page.locator(heroMain)).toHaveAttribute(
+    "data-banner-id",
+    String(id),
+  );
   expect(
     await page
       .locator(".hero-banner:not([data-position=main])")
@@ -782,35 +795,37 @@ async function heroSlide(page: Page, title: string) {
   ).toBe(true);
 }
 
-test("Home banner preserves reference heights, copy and composition at 1440/390/320, enlarged text and narrowed AI workspace", async ({
+test("Home banners show admin images in server order at 3:1 with Mini App links, RU/UZ names and narrowed AI workspace", async ({
   page,
 }, testInfo) => {
   await fixture(page);
-  for (const [width, expectedHeight] of [
-    [1440, 402],
-    [390, 440],
-    [320, 458],
-  ]) {
-    if (!width || !expectedHeight) throw new Error("Missing geometry fixture");
+  for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto("/");
-    await expect(page.locator(".home-grid article")).toHaveCount(4);
-    const stage = page.locator(".hero-stage");
-    expect((await stage.boundingBox())?.height).toBe(expectedHeight);
-    expect((await stage.boundingBox())?.width).toBe(
-      width === 1440 ? 1160 : width - 32,
+    await heroSlide(page, 6);
+    const stage = await page.locator(".hero-stage").boundingBox();
+    if (!stage) throw new Error("Missing banner bounds");
+    expect(stage.width).toBe(width === 1440 ? 1160 : width - 32);
+    expect(Math.abs(stage.height - stage.width / 3)).toBeLessThan(1);
+    expect(
+      await page
+        .locator(".hero-banner")
+        .evaluateAll((nodes) =>
+          nodes.map((n) => n.getAttribute("data-banner-id")),
+        ),
+    ).toEqual(["6", "5", "1"]);
+    await expect(page.locator(heroMain + " img")).toHaveAttribute(
+      "src",
+      "/synthetic-banner-6.svg",
     );
-    await expect(page.locator("#hero-note")).toContainText("примеры");
-    await expect(
-      page.locator(".hero nav, .hero .preview, .hero a"),
-    ).toHaveCount(0);
-    const stageBox = await stage.boundingBox(),
-      rotation = await page.locator(".hero-rotation").boundingBox();
-    if (!stageBox || !rotation) throw new Error("Missing banner bounds");
-    expect(rotation.y).toBeGreaterThan(stageBox.y);
-    expect(rotation.y + rotation.height).toBeLessThan(
-      stageBox.y + stageBox.height,
+    await expect(page.locator(heroMain + " a")).toHaveAccessibleName(
+      "Баннер 4",
     );
+    await expect(page.locator(".hero-dot")).toHaveCount(3);
+    const rotation = await page.locator(".hero-rotation").boundingBox();
+    if (!rotation) throw new Error("Missing rotation control");
+    expect(rotation.y).toBeGreaterThan(stage.y);
+    expect(rotation.y + rotation.height).toBeLessThan(stage.y + stage.height);
     if (width !== 320)
       await page.screenshot({
         path: testInfo.outputPath(`hero-home-${width}.png`),
@@ -819,41 +834,53 @@ test("Home banner preserves reference heights, copy and composition at 1440/390/
       await page.evaluate((size) => {
         document.documentElement.style.fontSize = size;
       }, font);
-      for (let index = 0; index < 3; index++) {
-        await expect(page.locator(".hero-stage")).toHaveAttribute(
-          "data-busy",
-          "false",
-        );
-        expect(
-          await page.locator(heroMain).evaluate((node) => {
-            const box = node.getBoundingClientRect(),
-              copy = node.querySelector(".hero-copy"),
-              art = node.querySelector(".hero-art");
-            if (!copy || !art) return false;
-            const c = copy.getBoundingClientRect(),
-              a = art.getBoundingClientRect();
-            return (
-              c.bottom <= box.bottom &&
-              c.right <= box.right &&
-              c.left >= box.left &&
-              (a.left >= c.right || a.top >= c.bottom)
-            );
-          }),
-        ).toBe(true);
-        await noOverflow(page);
-        await page.locator(".hero-next").click();
-      }
+      await noOverflow(page);
     }
     await page.evaluate(() => {
       document.documentElement.style.fontSize = "";
     });
     await page.locator('.languages [lang="uz"]').click();
-    await expect(page.locator("#hero-note")).toContainText("namuna");
+    await heroSlide(page, 6);
     await expect(page.locator(".hero-next")).toHaveAccessibleName(
-      "Keyingi eʼlon",
+      "Keyingi banner",
     );
-    await noOverflow(page);
+    await page.locator(".hero-dot").nth(1).click();
+    await heroSlide(page, 5);
+    await expect(page.locator(heroMain + " a")).toHaveAccessibleName(
+      "Sintetik banner",
+    );
+    await expect(page.locator(".hero-dot").nth(1)).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
   }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/");
+  const links = page.locator(".hero-link");
+  await expect(links.nth(0)).toHaveAttribute(
+    "href",
+    "/#catalogue?page=1&lang=ru",
+  );
+  await expect(links.nth(1)).toHaveAttribute(
+    "href",
+    "/#catalogue?category=301&page=1&lang=ru",
+  );
+  await expect(links.nth(2)).toHaveAttribute(
+    "href",
+    "/#product?id=4004&lang=ru",
+  );
+  await expect(page.locator(".hero-link[target]")).toHaveCount(0);
+  await page.locator(heroMain + " a").click();
+  await expect(page).toHaveURL(/#catalogue\?page=1&lang=ru$/);
+  await expect(page.locator(".product-grid article")).toHaveCount(20);
+  await page.goBack();
+  await page.locator(".hero-dot").nth(2).click();
+  await heroSlide(page, 1);
+  await page.locator(heroMain + " a").click();
+  await expect(page.locator(".product-main")).toHaveAttribute(
+    "data-product-id",
+    "4004",
+  );
   for (const width of [1440, 1000]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto("/");
@@ -867,11 +894,6 @@ test("Home banner preserves reference heights, copy and composition at 1440/390/
         assistant = await page.locator(".assistant-panel").boundingBox();
       if (!hero || !assistant) throw new Error("Missing workspace bounds");
       expect(hero.x + hero.width).toBeLessThanOrEqual(assistant.x);
-      expect(
-        await page
-          .locator(heroMain)
-          .evaluate((e) => e.scrollWidth <= e.clientWidth),
-      ).toBe(true);
     }
     await page.keyboard.press("Escape");
     await page.evaluate(() => {
@@ -880,13 +902,13 @@ test("Home banner preserves reference heights, copy and composition at 1440/390/
   }
 });
 
-test("banner edges wrap, crossfade whole slides, keyboard and artwork drag; example modal coordinates surfaces, focus and route cleanup", async ({
+test("banner edges and dots wrap, crossfade whole slides and keep keyboard focus; empty or failed banners leave no carousel", async ({
   page,
 }) => {
-  await fixture(page);
+  const f = await fixture(page);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/");
-  await heroSlide(page, "Ближек истокам");
+  await heroSlide(page, 6);
   await page.locator(".hero-previous").click();
   await expect(
     page.locator('.hero-banner[data-position="incoming"]'),
@@ -894,90 +916,80 @@ test("banner edges wrap, crossfade whole slides, keyboard and artwork drag; exam
   await expect(
     page.locator('.hero-banner[data-position="outgoing"]'),
   ).toHaveCSS("animation-duration", "0.28s");
-  await heroSlide(page, "Замечатьбольше");
+  await heroSlide(page, 1);
   await page.locator(".hero-next").click();
-  await heroSlide(page, "Ближек истокам");
+  await heroSlide(page, 6);
   await page.locator(".hero-next").focus();
   await page.keyboard.press("ArrowRight");
-  await heroSlide(page, "Времядля диалога");
+  await heroSlide(page, 5);
   await expect(page.locator(".hero-next")).toBeFocused();
+  await expect(page.locator(".hero [aria-live]")).toHaveText(
+    "2 из 3: Синтетический баннер",
+  );
   await page.keyboard.press("Tab");
   await greenFocus(page.locator(".hero-next"));
-  const art = await page.locator(heroMain + " .hero-art").boundingBox();
-  if (!art) throw new Error("Missing artwork");
-  await page.mouse.move(art.x + art.width / 2, art.y + art.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(art.x + art.width / 2 + 100, art.y + art.height / 2, {
-    steps: 6,
-  });
-  await page.mouse.up();
-  await heroSlide(page, "Ближек истокам");
-  await page.locator(".sidebar .ai-nav").click();
-  await page.locator(heroMain + " .hero-details").click();
-  await dialogCount(page, 1);
-  const modal = page.locator(".hero-example");
-  await expect(page.locator(".assistant-panel")).not.toBeVisible();
-  await expect(modal).toHaveAccessibleName("Пример материала");
-  await expect(modal).toContainText("не сообщает о реальной публикации");
-  await expect(modal.locator(".close-control")).toBeFocused();
-  await page.keyboard.press("Tab");
-  await greenFocus(modal.locator(".close-control"));
-  await page.keyboard.press("Shift+Tab");
-  await expect(modal.locator("button").last()).toBeFocused();
-  await page.keyboard.press("Tab");
-  await expect(modal.locator(".close-control")).toBeFocused();
-  await expect(page.locator("html")).toHaveClass(/modal-open/);
-  await page.keyboard.press("Escape");
-  await expect(page.locator(heroMain + " .hero-details")).toBeFocused();
-  await dialogCount(page, 0);
-  await page.locator(".basket-button").click();
-  await dialogCount(page, 1);
-  await page.keyboard.press("Escape");
-  await page.locator('.languages [lang="uz"]').click();
-  await page.locator(heroMain + " .hero-details").click();
-  await expect(modal).toHaveAccessibleName("Material namunasi");
-  await expect(modal).toContainText("haqiqiy nashr");
-  await page.evaluate(() => {
-    location.hash = "catalogue?lang=uz";
-  });
-  await expect(page.locator(".hero")).toHaveCount(0);
-  await dialogCount(page, 0);
-  await expect(page.locator("html")).not.toHaveClass(/modal-open/);
-  await expect(page.locator("#content")).toBeFocused();
+  await greenFocus(page.locator(heroMain + " a"));
+  await greenFocus(page.locator(".hero-dot").first());
+  await page.keyboard.press("Enter");
+  await heroSlide(page, 6);
+  f.banners = f.banners.slice(0, 1);
+  await page.goto("/#home?lang=uz");
+  await heroSlide(page, 6);
+  await expect(
+    page.locator(".hero-edge, .hero-dot, .hero-rotation"),
+  ).toHaveCount(0);
+  await expect(page.locator(".hero")).not.toHaveAttribute(
+    "aria-roledescription",
+  );
+  f.banners = [];
+  await page.goto("/#home?lang=ru");
+  await expect(page.locator('[data-category="product"] article')).toHaveCount(
+    8,
+  );
+  await expect(page.locator(".hero, .hero-loading")).toHaveCount(0);
+  await page.route("**/api/v1/banners?*", (route) =>
+    route.fulfill({ status: 503, json: {} }),
+  );
+  await page.goto("/#home?lang=uz");
+  await expect(page.locator('[data-category="product"] article')).toHaveCount(
+    8,
+  );
+  await expect(page.locator(".hero, .hero-loading")).toHaveCount(0);
+  await expect(page.locator("main [role=alert]")).toHaveCount(0);
 });
 
-test("banner eight-second autoplay pauses for hover, keyboard, manual control, hidden page, other surfaces and reduced motion", async ({
+test("banner autoplay uses the admin interval and pauses for hover, keyboard, manual control, hidden page, other surfaces and reduced motion", async ({
   page,
 }) => {
-  await fixture(page);
+  const f = await fixture(page);
   await page.clock.install({ time: new Date("2030-01-01T00:00:00Z") });
   await page.clock.pauseAt(new Date("2030-01-01T00:00:01Z"));
   await page.goto("/");
   await page.mouse.move(1, 1);
-  await page.clock.runFor(7999);
-  await heroSlide(page, "Ближек истокам");
+  await heroSlide(page, 6);
+  await expect(page.locator("#hero-play-state")).toHaveText(
+    "Автосмена · каждые 4 с",
+  );
+  await page.clock.runFor(3999);
+  await heroSlide(page, 6);
   await page.clock.runFor(1);
   await expect(page.locator(".hero-stage")).toHaveAttribute(
     "data-busy",
     "true",
   );
   await page.clock.runFor(280);
-  await heroSlide(page, "Времядля диалога");
+  await heroSlide(page, 5);
   await page.locator(".hero-stage").hover();
   await page.clock.runFor(9000);
-  await heroSlide(page, "Времядля диалога");
+  await heroSlide(page, 5);
   await page.mouse.move(1, 1);
-  await page.clock.runFor(8000);
-  await expect(page.locator(".hero-stage")).toHaveAttribute(
-    "data-busy",
-    "true",
-  );
+  await page.clock.runFor(4000);
   await page.clock.runFor(280);
-  await heroSlide(page, "Замечатьбольше");
+  await heroSlide(page, 1);
   await page.locator(".hero-rotation").click();
   await page.mouse.move(1, 1);
   await page.clock.runFor(9000);
-  await heroSlide(page, "Замечатьбольше");
+  await heroSlide(page, 1);
   await page.locator(".hero-rotation").click();
   await page.mouse.move(1, 1);
   await page.evaluate(() => {
@@ -988,7 +1000,7 @@ test("banner eight-second autoplay pauses for hover, keyboard, manual control, h
     document.dispatchEvent(new Event("visibilitychange"));
   });
   await page.clock.runFor(9000);
-  await heroSlide(page, "Замечатьбольше");
+  await heroSlide(page, 1);
   await page.evaluate(() => {
     Object.defineProperty(document, "hidden", {
       configurable: true,
@@ -996,38 +1008,45 @@ test("banner eight-second autoplay pauses for hover, keyboard, manual control, h
     });
     document.dispatchEvent(new Event("visibilitychange"));
   });
-  await page.clock.runFor(8000);
-  await expect(page.locator(".hero-stage")).toHaveAttribute(
-    "data-busy",
-    "true",
-  );
+  await page.clock.runFor(4000);
   await page.clock.runFor(280);
-  await heroSlide(page, "Ближек истокам");
+  await heroSlide(page, 6);
   await page.locator(".sidebar .ai-nav").click();
   await page.clock.runFor(9000);
-  await heroSlide(page, "Ближек истокам");
+  await heroSlide(page, 6);
   await page.keyboard.press("Escape");
-  await page.locator(firstCard + " .add").click();
+  await page
+    .locator('[data-category="product"] ' + firstCard + " .add")
+    .click();
   await expect(page.locator(".size-picker")).toBeVisible();
   await page.clock.runFor(9000);
-  await heroSlide(page, "Ближек истокам");
+  await heroSlide(page, 6);
   await page.keyboard.press("Escape");
-  await page.locator(heroMain + " .hero-details").focus();
+  await page.locator(heroMain + " a").focus();
   await page.keyboard.press("Tab");
   await page.clock.runFor(9000);
-  await heroSlide(page, "Ближек истокам");
+  await heroSlide(page, 6);
   await page.locator(".hero-next").click();
   await page.clock.runFor(9300);
-  await heroSlide(page, "Времядля диалога");
+  await heroSlide(page, 5);
+  f.interval = null;
+  await page.goto("/");
+  await page.mouse.move(1, 1);
+  await expect(page.locator("#hero-play-state")).toHaveText(
+    "Автосмена · каждые 3 с",
+  );
+  await page.clock.runFor(3000);
+  await page.clock.runFor(280);
+  await heroSlide(page, 5);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
   await expect(page.locator("#hero-play-state")).toContainText(
     "меньше движения",
   );
   await page.clock.runFor(9000);
-  await heroSlide(page, "Ближек истокам");
+  await heroSlide(page, 6);
   await page.locator(".hero-next").click();
-  await heroSlide(page, "Времядля диалога");
+  await heroSlide(page, 5);
   await expect(page.locator(heroMain)).toHaveCSS("animation-name", "none");
   await page.locator(".sidebar .nav-primary > a").last().click();
   await page.clock.runFor(20000);
@@ -1040,7 +1059,7 @@ test.describe("banner native mobile gestures", () => {
     isMobile: true,
     viewport: { width: 390, height: 844 },
   });
-  test("both-way swipes preserve vertical page scroll and native example CTA taps", async ({
+  test("both-way swipes preserve vertical page scroll; dot and banner taps navigate", async ({
     page,
     context,
   }) => {
@@ -1065,34 +1084,26 @@ test.describe("banner native mobile gestures", () => {
       });
     }
     try {
-      await heroSlide(page, "Ближек истокам");
+      await heroSlide(page, 6);
       const stage = await page.locator(".hero-stage").boundingBox();
       if (!stage) throw new Error("Missing touch bounds");
-      const y = stage.y + stage.height - 100;
+      const y = stage.y + stage.height / 2;
       await swipe(300, y, 100, y);
-      await heroSlide(page, "Времядля диалога");
+      await heroSlide(page, 5);
+      await expect(page).toHaveURL(/\/$|#home/);
       await swipe(100, y, 300, y);
-      await heroSlide(page, "Ближек истокам");
-      const button = await page
-        .locator(heroMain + " .hero-details")
-        .boundingBox();
-      if (!button) throw new Error("Missing native tap target");
-      await cdp.send("Input.dispatchTouchEvent", {
-        type: "touchStart",
-        touchPoints: [
-          { x: button.x + button.width / 2, y: button.y + button.height / 2 },
-        ],
-      });
-      await cdp.send("Input.dispatchTouchEvent", {
-        type: "touchEnd",
-        touchPoints: [],
-      });
-      await expect(page.locator(".hero-example")).toBeVisible();
-      await page.locator(".hero-example button").last().tap();
-      await expect(page.locator(heroMain + " .hero-details")).toBeFocused();
-      await swipe(210, y, 210, y - 220);
+      await heroSlide(page, 6);
+      await page.locator(".hero-dot").nth(2).tap();
+      await heroSlide(page, 1);
+      await swipe(210, y + 20, 210, y - 200);
       await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(0);
-      await heroSlide(page, "Ближек истокам");
+      await heroSlide(page, 1);
+      await page.evaluate(() => scrollTo(0, 0));
+      await page.locator(heroMain + " a").tap();
+      await expect(page.locator(".product-main")).toHaveAttribute(
+        "data-product-id",
+        "4004",
+      );
       await page.locator(".menu-toggle").tap();
       await expect(page.locator(".drawer")).toBeVisible();
       await page.keyboard.press("Escape");
@@ -1101,6 +1112,206 @@ test.describe("banner native mobile gestures", () => {
       await cdp.detach();
     }
   });
+});
+
+test("Home sections: sale, Mini App category rows, lazy video, FAQ accordion, consultation mock-up and contacts in RU/UZ", async ({
+  page,
+}, testInfo) => {
+  await fixture(page);
+  const requests: string[] = [];
+  page.on("request", (r) => requests.push(r.method() + " " + r.url()));
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/");
+  await expect
+    .poll(() =>
+      page
+        .locator("main > section")
+        .evaluateAll((nodes) =>
+          nodes.map(
+            (n) =>
+              n.getAttribute("data-category") ||
+              [...n.classList].find((c) => c !== "home-section"),
+          ),
+        ),
+    )
+    .toEqual(["hero", "sale", "product", "home-video", "faq", "consultation"]);
+  const sale = page.locator('[data-category="sale"]');
+  await expect(sale.locator("h2")).toHaveText("Акции");
+  await expect(sale.locator(".section-head a")).toHaveCount(0);
+  await expect(sale.locator(firstCard + " .promotion-badge")).toHaveText(
+    "Акция",
+  );
+  expect(
+    requests.some((r) =>
+      r.includes("/api/v1/products?on_sale=true&page=1&size=100"),
+    ),
+  ).toBe(true);
+  expect(
+    requests.some((r) =>
+      r.includes("/api/v1/products?page=1&size=8&category_id=301"),
+    ),
+  ).toBe(true);
+  await sale.locator(firstCard + " .add").click();
+  await page
+    .locator(".size-picker")
+    .getByRole("button", { name: "L", exact: true })
+    .click();
+  await page
+    .locator(".size-picker")
+    .getByRole("button", { name: "В корзину", exact: true })
+    .click();
+  await expect(page.locator(".basket-badge")).toHaveText("1");
+  await expect(
+    page.locator('[data-category="product"] ' + firstCard + " output"),
+  ).toHaveText("1");
+
+  const video = page.locator(".home-video");
+  await expect(video.locator("h2")).toHaveText(
+    "Пробиотики и витаминно-минеральные комплексы",
+  );
+  await expect(video.locator("iframe")).toHaveCount(0);
+  expect(requests.some((r) => r.includes("youtube-nocookie"))).toBe(false);
+  await video
+    .getByRole("button", {
+      name: "Смотреть видео: Пробиотики и витаминно-минеральные комплексы",
+    })
+    .click();
+  const frame = video.locator("iframe");
+  await expect(frame).toHaveAttribute(
+    "src",
+    "https://www.youtube-nocookie.com/embed/MaA4Rtf9ZXA?autoplay=1&rel=0",
+  );
+  await expect(frame).toHaveAttribute(
+    "referrerpolicy",
+    "strict-origin-when-cross-origin",
+  );
+  await expect(frame).toHaveAttribute("allowfullscreen", "");
+  const box = await frame.boundingBox();
+  expect(
+    Math.abs((box?.width || 0) / (box?.height || 1) - 16 / 9),
+  ).toBeLessThan(0.01);
+
+  const questions = page.locator(".faq-item h3 button");
+  await expect(questions).toHaveCount(6);
+  await expect(questions.first()).toHaveText(
+    /Что делает продукцию BIOTACT DEUTSCHLAND уникальной на рынке\?/,
+  );
+  await expect(page.locator(".faq [role=region]:visible")).toHaveCount(0);
+  await questions.nth(0).click();
+  await expect(questions.nth(0)).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    page.getByRole("region", {
+      name: /Что делает продукцию BIOTACT DEUTSCHLAND/,
+    }),
+  ).toContainText("инновационным формулам");
+  await questions.nth(5).focus();
+  await page.keyboard.press("Enter");
+  await expect(questions.nth(0)).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator(".faq [role=region]:visible")).toContainText(
+    "+998 93 555 17 47",
+  );
+  await page.keyboard.press("Space");
+  await expect(page.locator(".faq [role=region]:visible")).toHaveCount(0);
+
+  const form = page.locator(".consultation");
+  await expect(form.locator("h2")).toHaveText(
+    "Получите бесплатную консультацию по нашей продукции от специалиста",
+  );
+  await form.getByLabel("Ваше имя").fill("Synthetic Name");
+  await form.getByLabel("Телефон").fill("90 123 45 67");
+  await form.getByLabel("Ваш вопрос").fill("private-question");
+  await greenFocus(form.getByLabel("Ваш вопрос"));
+  const before = requests.length;
+  await form
+    .getByRole("button", { name: "Получить консультацию", exact: true })
+    .click();
+  await expect(form.getByRole("status")).toHaveText(
+    "Форма скоро заработает. Позвоните нам: +998 93 555 17 47",
+  );
+  await expect(
+    form.getByRole("link", { name: "+998 93 555 17 47" }),
+  ).toHaveAttribute("href", "tel:+998935551747");
+  await page.waitForTimeout(200);
+  expect(requests.slice(before)).toEqual([]);
+  expect(requests.filter((r) => r.includes("private-question"))).toEqual([]);
+  expect(page.url()).toMatch(/\/$/);
+
+  const footer = page.locator(".page-footer");
+  await expect(footer).toContainText(
+    "100009, г. Ташкент, Юнусабадский район, МФЙ «Шарк хакикати», улица Янгикурган, 1-й тупик, дом 90",
+  );
+  await expect(footer).not.toContainText("Фаробий");
+  await expect(
+    footer.getByRole("link", { name: "(+998 93) 555 17 47" }),
+  ).toHaveAttribute("href", "tel:+998935551747");
+  await expect(
+    footer.getByRole("link", { name: "contact_uz@biotact.de" }),
+  ).toHaveAttribute("href", "mailto:contact_uz@biotact.de");
+  await expect(footer).toContainText("Siemensstraße 10");
+  await expect(footer).toContainText("53121 Bonn, Deutschland");
+  await expect(
+    footer.getByRole("link", { name: "kontakt@biotact.de" }),
+  ).toHaveAttribute("href", "mailto:kontakt@biotact.de");
+  await page.screenshot({
+    path: testInfo.outputPath("home-sections-1440.png"),
+    fullPage: true,
+  });
+
+  await page.locator('.languages [lang="uz"]').click();
+  await expect(sale.locator("h2")).toHaveText("Aksiyalar");
+  await expect(page.locator('[data-category="product"] h2')).toHaveText(
+    "Mashhur mahsulotlar",
+  );
+  await expect(
+    page.locator('[data-category="product"] .section-head a'),
+  ).toHaveText("Hammasini ko'rish →");
+  await expect(video.locator("h2")).toHaveText(
+    "Probiotiklar va vitamin-mineral komplekslar",
+  );
+  await expect(page.locator(".faq h2")).toHaveText("Savol-javob");
+  await expect(questions.nth(3)).toHaveText(
+    /Bizning probiotiklar va vitamin-mineral komplekslarimizning noyob afzalliklari qanday\?/,
+  );
+  await expect(form.locator("h2")).toHaveText(
+    "Bizning mutaxassisimizdan mahsulotlarimiz bo'yicha bepul maslahat oling",
+  );
+  await form
+    .getByRole("button", { name: "Maslahat olish", exact: true })
+    .click();
+  await expect(form.getByRole("status")).toHaveText(
+    "Shakl tez orada ishga tushadi. Bizga qo'ng'iroq qiling: +998 93 555 17 47",
+  );
+  await expect(footer).toContainText(
+    "100009, Toshkent shahri, Yunusobod tumani, Sharq haqiqati MFY, Yangiqo'rg'on ko'chasi, 1-tor ko'cha, 90-uy",
+  );
+  await page.locator('[data-category="product"] .section-head a').click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+    "Nutriyentlar API",
+  );
+  await expect(page.locator(".page-footer")).toContainText("Toshkent shahri");
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/#home?lang=uz");
+    await expect(page.locator('[data-category="product"] article')).toHaveCount(
+      8,
+    );
+    for (const font of ["", "125%"]) {
+      await page.evaluate((size) => {
+        document.documentElement.style.fontSize = size;
+      }, font);
+      await noOverflow(page);
+    }
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = "";
+    });
+  }
+  expect(
+    requests.filter(
+      (r) =>
+        !r.startsWith("GET ") ||
+        /consultation|orders|basket|lead|feedback/.test(r),
+    ),
+  ).toEqual([]);
 });
 
 async function seedGuestBasket(

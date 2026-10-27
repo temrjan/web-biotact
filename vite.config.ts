@@ -24,7 +24,9 @@ function publicCataloguePreview(): Plugin {
         };
         if (
           req.method !== "GET" ||
-          !/^\/api\/v1\/(categories|products|products\/[1-9]\d*)$/.test(path)
+          !/^\/api\/v1\/(categories|products|products\/[1-9]\d*|banners|settings\/banner_interval)$/.test(
+            path,
+          )
         ) {
           fail(403, "public_catalogue_preview_only");
           return;
@@ -36,8 +38,10 @@ function publicCataloguePreview(): Plugin {
           path === "/api/v1/categories"
             ? ["page", "size"]
             : path === "/api/v1/products"
-              ? ["page", "size", "category_id", "search"]
-              : [];
+              ? ["page", "size", "category_id", "search", "on_sale"]
+              : path === "/api/v1/banners"
+                ? ["is_active", "limit", "skip"]
+                : [];
         const language = req.headers["x-language"] ?? "ru";
         if (
           [...params.keys()].some((key) => !allowed.includes(key)) ||

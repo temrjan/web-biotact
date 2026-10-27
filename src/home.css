@@ -1,0 +1,234 @@
+/* Home sections after the banners: product rows, video, FAQ, consultation, contacts. */
+.home-section {
+  margin-top: 2.5rem;
+}
+.home-section > h2 {
+  margin-bottom: 1.5rem;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+/* Mini App sliders: four cards visible on desktop, two on compact screens. */
+.product-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: calc((100% - 3 * 1.5rem) / 4);
+  gap: 1.5rem;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  /* Room for the raised card shadow; snapping aligns cards to the content edge. */
+  padding: 0.75rem;
+  scroll-padding-inline: 0.75rem;
+  margin: -0.75rem -0.75rem 0;
+}
+.product-row > * {
+  scroll-snap-align: start;
+}
+.assistant-open .product-row {
+  grid-auto-columns: calc((100% - 1.5rem) / 2);
+}
+.video-frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--bt-radius-panel);
+  background: #000;
+  box-shadow: var(--bt-shadow-raised);
+}
+.video-frame iframe,
+.video-preview,
+.video-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.home-video .video-preview {
+  position: relative;
+  padding: 0;
+  border-radius: 0;
+  background: #000;
+  box-shadow: none;
+}
+.video-preview img {
+  object-fit: cover;
+}
+.video-play {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  display: grid;
+  place-items: center;
+  width: 4.5rem;
+  height: 3.25rem;
+  padding-left: 0.25rem;
+  transform: translate(-50%, -50%);
+  border-radius: 1rem;
+  background: var(--bt-action);
+  color: var(--bt-text-inverse);
+  font-size: 1.5rem;
+  transition: background 150ms;
+}
+.home-video .video-preview:hover:enabled .video-play {
+  background: var(--bt-action-hover);
+}
+.home-video .video-preview:hover:enabled,
+.home-video .video-preview:active:enabled {
+  background: #000;
+  box-shadow: none;
+}
+.home-video .video-preview:focus-visible {
+  outline-offset: -5px;
+}
+.faq-list {
+  display: grid;
+  gap: 0.5rem;
+}
+.faq-item {
+  overflow: hidden;
+  border: 1px solid var(--bt-border);
+  border-radius: var(--bt-radius-control);
+  background: var(--bt-surface);
+}
+.faq-item h3 {
+  font-size: 1rem;
+}
+.faq-item button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.875rem 1rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--bt-text);
+  font-weight: 700;
+  text-align: left;
+}
+.faq-item button:focus-visible {
+  outline-offset: -4px;
+}
+.faq-icon {
+  flex-shrink: 0;
+  color: var(--bt-action);
+  font-size: 1.5rem;
+  font-weight: 400;
+  line-height: 1;
+}
+.faq-item [role="region"] p {
+  padding: 0 1rem 1rem;
+  color: var(--bt-text-muted);
+  font-size: var(--bt-font-size-small);
+}
+.consultation {
+  max-width: 44rem;
+  margin-inline: auto;
+  text-align: center;
+}
+.consultation-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  text-align: left;
+}
+.consultation-question,
+.consultation-submit,
+.consultation-notice {
+  grid-column: 1 / -1;
+}
+.phone-input {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--bt-border);
+  border-radius: var(--bt-radius-control);
+  background: var(--bt-surface);
+}
+.phone-input:focus-within {
+  outline: var(--bt-focus-width) solid var(--bt-focus);
+  outline-offset: var(--bt-focus-offset);
+}
+.phone-input > span[aria-hidden] {
+  padding-left: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.guest-field .phone-input input {
+  border: 0;
+  background: transparent;
+  padding-left: 0.5rem;
+}
+.guest-field .phone-input input:focus-visible {
+  outline: none;
+}
+.consultation .consultation-submit {
+  border-color: var(--bt-action);
+  background: var(--bt-action);
+  color: var(--bt-text-inverse);
+  font-weight: 700;
+}
+.consultation .consultation-submit:hover:enabled {
+  background: var(--bt-action-hover);
+}
+.consultation .consultation-submit:active:enabled {
+  background: var(--bt-action-active);
+}
+.consultation-notice:empty {
+  display: none;
+}
+.consultation-notice {
+  padding: 0.75rem 1rem;
+  border-left: var(--bt-indicator-width) solid var(--bt-action);
+  border-radius: var(--bt-radius-control);
+  background: var(--bt-surface);
+}
+.consultation-notice a {
+  font-weight: 700;
+  white-space: nowrap;
+}
+.footer-companies {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem;
+}
+.footer-companies h2 {
+  margin-bottom: 0.5rem;
+  color: var(--bt-text);
+  font-size: 1rem;
+  font-weight: 700;
+}
+.footer-companies p + p {
+  margin-top: 0.25rem;
+}
+.footer-companies a {
+  color: var(--bt-action);
+}
+@media (max-width: 999px) {
+  .home-section {
+    margin-top: 2rem;
+  }
+  .product-row,
+  .assistant-open .product-row {
+    grid-auto-columns: calc((100% - 1rem) / 2);
+    gap: 1rem;
+  }
+}
+@media (max-width: 600px) {
+  .consultation-form,
+  .footer-companies {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .product-row {
+    gap: 0.75rem;
+    grid-auto-columns: calc((100% - 0.75rem) / 2);
+  }
+}

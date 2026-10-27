@@ -8,7 +8,8 @@ import {
 import Account from "./Account";
 import Assistant, { type BeforeAdd } from "./Assistant";
 import SizePicker from "./SizePicker";
-import Hero, { ExampleMaterial } from "./Hero";
+import Hero from "./Hero";
+import { CompanyFooter, Consultation, Faq, Video } from "./HomeSections";
 import Basket, {
   basketCopy,
   CartIcon,
@@ -32,9 +33,9 @@ const copy = {
     retry: "Повторить",
     empty: "Товары не найдены",
     unavailable: "Категория недоступна",
-    preview: "Первые товары каталога",
-    previewNote:
-      "Небольшой обзор — до четырёх товаров. Полный ассортимент доступен в каталоге.",
+    popular: "Популярные товары",
+    viewAll: "Смотреть все",
+    sales: "Акции",
     details: "Подробнее о товаре",
     noImage: "Нет изображения",
     inStock: "В наличии",
@@ -83,9 +84,9 @@ const copy = {
     retry: "Qayta urinish",
     empty: "Mahsulotlar topilmadi",
     unavailable: "Turkum mavjud emas",
-    preview: "Katalogdagi dastlabki mahsulotlar",
-    previewNote:
-      "Qisqa koʻrinish — toʻrttagacha mahsulot. Toʻliq assortiment katalogda.",
+    popular: "Mashhur mahsulotlar",
+    viewAll: "Hammasini ko'rish",
+    sales: "Aksiyalar",
     details: "Mahsulot haqida batafsil",
     noImage: "Rasm mavjud emas",
     inStock: "Mavjud",
@@ -320,17 +321,15 @@ function Card({
 function Grid({
   products,
   lang,
-  home = false,
   lines,
   change,
   chooseSize,
 }: CardPurchases & {
   products: api.Product[];
   lang: api.Language;
-  home?: boolean;
 }) {
   return (
-    <div className={`product-grid${home ? " home-grid" : ""}`}>
+    <div className="product-grid">
       {products.map((p) => (
         <Card
           key={p.id}
@@ -357,6 +356,85 @@ function Recovery({ lang, title }: { lang: api.Language; title: string }) {
     </div>
   );
 }
+function ProductRow({
+  products,
+  lang,
+  lines,
+  change,
+  chooseSize,
+}: CardPurchases & {
+  products: api.Product[];
+  lang: api.Language;
+}) {
+  return (
+    <div className="product-row">
+      {products.map((p) => (
+        <Card
+          key={p.id}
+          product={p}
+          lang={lang}
+          lines={lines}
+          change={change}
+          chooseSize={chooseSize}
+        />
+      ))}
+    </div>
+  );
+}
+function CategoryRow({
+  category,
+  title,
+  lang,
+  lines,
+  change,
+  chooseSize,
+}: CardPurchases & {
+  category: api.Category;
+  title: string;
+  lang: api.Language;
+}) {
+  const t = copy[lang];
+  const read = useRead(`${lang}:${category.id}`, (s) =>
+    api.products(lang, s, 1, 8, category.id),
+  );
+  // The Mini App hides a category section without products.
+  if (read.result.status === "ready" && !read.result.data.items.length)
+    return null;
+  const id = `home-${category.slug}`;
+  return (
+    <section
+      className="home-section"
+      data-category={category.slug}
+      aria-labelledby={id}
+    >
+      <div className="section-head">
+        <h2 id={id}>{title}</h2>
+        <a
+          href={href({
+            view: "catalogue",
+            lang,
+            page: 1,
+            category: category.id,
+          })}
+        >
+          {t.viewAll} →
+        </a>
+      </div>
+      <State result={read.result} lang={lang} retry={read.retry}>
+        {read.result.status === "ready" && (
+          <ProductRow
+            products={read.result.data.items}
+            lang={lang}
+            lines={lines}
+            change={change}
+            chooseSize={chooseSize}
+          />
+        )}
+      </State>
+    </section>
+  );
+}
+/** Mini App home order on the shared Shop data, then video, FAQ and consultation. */
 function Home({
   lang,
   categories,
@@ -364,89 +442,73 @@ function Home({
   lines,
   change,
   obscured,
-  onAnnouncement,
   chooseSize,
 }: CardPurchases & {
   obscured: boolean;
-  onAnnouncement: (index: number, trigger: HTMLButtonElement) => void;
   lang: api.Language;
   categories: Read<api.Category[]>;
   retry: () => void;
 }) {
-  const t = copy[lang],
-    preview = useRead(lang, (s) => api.products(lang, s, 1, 4));
+  const t = copy[lang];
+  const promo = useRead(lang, (s) =>
+    Promise.all([api.banners(lang, s), api.bannerInterval(s)]),
+  );
+  const sale = useRead(lang, (s) => api.saleProducts(lang, s));
+  const ready = categories.status === "ready" ? categories.data : [];
   return (
     <>
-      <Hero lang={lang} obscured={obscured} onOpen={onAnnouncement} />
-      <div className="section-head">
-        <h1>{t.catalogue}</h1>
-        <a href={href({ view: "catalogue", lang, page: 1 })}>{t.all} →</a>
-      </div>
-      <State result={categories} lang={lang} retry={retry}>
-        {categories.status === "ready" && (
-          <div className="group-grid">
-            {slugs.map((slug, i) => {
-              const c = categories.data.find((item) => item.slug === slug);
-              const body = (
-                <>
-                  <div className="group-media">
-                    <Image
-                      src={c?.image_url || null}
-                      name={c?.name || t.groups[i] || slug}
-                      lang={lang}
-                    />
-                  </div>
-                  <div className="group-copy">
-                    <h2>{c?.name || t.groups[i]}</h2>
-                    {c?.description && <p>{c.description}</p>}
-                    {!c && <p className="muted">{t.missing}</p>}
-                  </div>
-                </>
-              );
-              return c ? (
-                <a
-                  className="group-tile"
-                  key={slug}
-                  href={href({
-                    view: "catalogue",
-                    lang,
-                    page: 1,
-                    category: c.id,
-                  })}
-                >
-                  {body}
-                </a>
-              ) : (
-                <div className="group-tile unavailable" key={slug}>
-                  {body}
-                </div>
-              );
-            })}
+      <h1 className="visually-hidden">BIOTACT</h1>
+      {promo.result.status === "loading" ? (
+        <div className="hero-stage hero-loading" aria-hidden="true" />
+      ) : (
+        promo.result.status === "ready" &&
+        promo.result.data[0].length > 0 && (
+          <Hero
+            lang={lang}
+            banners={promo.result.data[0]}
+            interval={promo.result.data[1]}
+            categories={ready}
+            obscured={obscured}
+          />
+        )
+      )}
+      {sale.result.status === "ready" && sale.result.data.length > 0 && (
+        <section
+          className="home-section"
+          data-category="sale"
+          aria-labelledby="home-sale"
+        >
+          <div className="section-head">
+            <h2 id="home-sale">{t.sales}</h2>
           </div>
-        )}
+          <ProductRow
+            products={sale.result.data}
+            lang={lang}
+            lines={lines}
+            change={change}
+            chooseSize={chooseSize}
+          />
+        </section>
+      )}
+      <State result={categories} lang={lang} retry={retry}>
+        {slugs.map((slug, i) => {
+          const c = ready.find((item) => item.slug === slug);
+          return c ? (
+            <CategoryRow
+              key={slug}
+              category={c}
+              title={i === 0 ? t.popular : c.name}
+              lang={lang}
+              lines={lines}
+              change={change}
+              chooseSize={chooseSize}
+            />
+          ) : null;
+        })}
       </State>
-      <section className="preview">
-        <div className="section-head">
-          <h2>{t.preview}</h2>
-          <a href={href({ view: "catalogue", lang, page: 1 })}>{t.all} →</a>
-        </div>
-        <p className="muted preview-note">{t.previewNote}</p>
-        <State result={preview.result} lang={lang} retry={preview.retry}>
-          {preview.result.status === "ready" &&
-            (preview.result.data.items.length ? (
-              <Grid
-                products={preview.result.data.items}
-                lang={lang}
-                home
-                lines={lines}
-                change={change}
-                chooseSize={chooseSize}
-              />
-            ) : (
-              <p role="status">{t.empty}</p>
-            ))}
-        </State>
-      </section>
+      <Video lang={lang} />
+      <Faq lang={lang} />
+      <Consultation lang={lang} />
     </>
   );
 }
@@ -758,14 +820,13 @@ export default function App() {
   const basket = useGuestBasket(loc.lang);
   const { lines, change: changeQuantity, units } = basket;
   const [surface, setSurface] = useState<
-    "menu" | "assistant" | "basket" | "announcement" | "size" | null
+    "menu" | "assistant" | "basket" | "size" | null
   >(null);
   const [sizeRequest, setSizeRequest] = useState<{
     product: api.Product;
     onAdded: (size: string) => void;
     beforeAdd?: BeforeAdd;
   } | null>(null);
-  const [announcement, setAnnouncement] = useState(0);
   const [compact, setCompact] = useState(
     () => window.matchMedia("(max-width: 999px)").matches,
   );
@@ -773,7 +834,6 @@ export default function App() {
   const dialog = useRef<HTMLDialogElement>(null),
     assistantDialog = useRef<HTMLDialogElement>(null),
     basketDialog = useRef<HTMLDialogElement>(null),
-    exampleDialog = useRef<HTMLDialogElement>(null),
     sizeDialog = useRef<HTMLDialogElement>(null),
     sizeOrigin = useRef<HTMLElement | null>(null),
     sizeEpoch = useRef(0),
@@ -789,15 +849,12 @@ export default function App() {
       hashRef.current = window.location.hash;
       setHash(window.location.hash);
       setSurface((current) =>
-        current === "announcement" ||
-        current === "size" ||
-        (current === "basket" && !languageOnly)
+        current === "size" || (current === "basket" && !languageOnly)
           ? null
           : current,
       );
       setSizeRequest(null);
       if (
-        exampleDialog.current?.open ||
         sizeDialog.current?.open ||
         (basketDialog.current?.open && !languageOnly)
       )
@@ -842,7 +899,7 @@ export default function App() {
     });
   }
   function show(
-    next: "menu" | "assistant" | "basket" | "announcement" | "size",
+    next: "menu" | "assistant" | "basket" | "size",
     trigger: HTMLElement,
   ) {
     origin.current = trigger;
@@ -915,11 +972,9 @@ export default function App() {
           ? assistantDialog.current
           : surface === "basket"
             ? basketDialog.current
-            : surface === "announcement"
-              ? exampleDialog.current
-              : surface === "size"
-                ? sizeDialog.current
-                : null;
+            : surface === "size"
+              ? sizeDialog.current
+              : null;
     const modal = surface !== "assistant" || compact;
     const moveFocus =
       target && (!target.open || target.contains(document.activeElement));
@@ -927,7 +982,6 @@ export default function App() {
       dialog.current,
       assistantDialog.current,
       basketDialog.current,
-      exampleDialog.current,
       sizeDialog.current,
     ]) {
       if (node?.open && (node !== target || node.matches(":modal") !== modal))
@@ -1121,10 +1175,6 @@ export default function App() {
               change={changeQuantity}
               chooseSize={chooseSize}
               obscured={surface !== null}
-              onAnnouncement={(index, trigger) => {
-                setAnnouncement(index);
-                show("announcement", trigger);
-              }}
             />
           )}
           {loc.view === "catalogue" && (
@@ -1147,33 +1197,13 @@ export default function App() {
               change={changeQuantity}
             />
           )}
-          {loc.view === "account" && <Account />}
+          {loc.view === "account" && <Account lang={loc.lang} />}
           {loc.view === "invalid" && (
             <Recovery lang={loc.lang} title={t.invalid} />
           )}
         </main>
-        <footer className="page-footer">BIOTACT</footer>
+        <CompanyFooter lang={loc.lang} />
       </div>
-      <dialog
-        ref={exampleDialog}
-        className="hero-example"
-        aria-labelledby="example-title"
-        onClose={() => {
-          if (surface === "announcement" && !exampleDialog.current?.open)
-            dismiss();
-        }}
-        onCancel={(e) => {
-          e.preventDefault();
-          dismiss();
-        }}
-        onKeyDown={dialogKeys}
-      >
-        <ExampleMaterial
-          lang={loc.lang}
-          index={announcement}
-          onClose={dismiss}
-        />
-      </dialog>
       <Assistant
         key={href(loc)}
         active={surface === "assistant"}

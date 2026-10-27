@@ -51,8 +51,9 @@ npm run build && BIOTACT_PUBLIC_CATALOGUE_PREVIEW=1 npm run preview -- --port 41
 Open `http://127.0.0.1:4187/`; stop with Ctrl+C. This optional preview serves
 `dist/` on loopback only and reads the fixed `https://app.biotact.uz` public
 catalogue with normal TLS verification. It allows only GET category/product
-lists and positive-integer product details, retaining W1 language, search and
-paging parameters. It strips credentials, refuses all other API paths/methods
+lists, positive-integer product details, active Home banners and the banner
+interval setting, retaining W1 language, search, sale filter and paging
+parameters. It strips credentials, refuses all other API paths/methods
 locally, and refuses upstream redirects. Account/authentication is unavailable
 in this catalogue-only mode. An external/wildcard `--host` is rejected. The
 process-only flag is off unless its exact value is `1`; ordinary dev/build,

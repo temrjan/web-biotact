@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { fixture, products } from "./catalogue.fixture";
+import { fixture, products, visibleCards } from "./catalogue.fixture";
 
 test("complete discovery, bounded Home, server paging/search and canonical native links", async ({
   page,
@@ -10,15 +10,27 @@ test("complete discovery, bounded Home, server paging/search and canonical nativ
     if (r.url().includes("/buyer/auth")) auth++;
   });
   await page.goto("/");
-  await expect(page.locator(".home-grid article")).toHaveCount(4);
-  await expect(page.locator(".group-tile.unavailable")).toContainText(
-    "Товары для жизни",
+  const popular = page.locator('[data-category="product"]');
+  await expect(popular.locator("article")).toHaveCount(8);
+  await expect(popular.locator("h2")).toHaveText("Популярные товары");
+  await expect(popular.locator(".section-head a")).toHaveAttribute(
+    "href",
+    "/#catalogue?category=301&page=1&lang=ru",
   );
-  await expect(page.locator(".group-tile.unavailable a")).toHaveCount(0);
+  await expect(page.locator('[data-category="sale"] article')).toHaveCount(1);
+  // Empty (302/303) and absent (active-life) categories are hidden like the Mini App.
+  await expect
+    .poll(() =>
+      page
+        .locator(".home-section[data-category]")
+        .evaluateAll((nodes) =>
+          nodes.map((n) => n.getAttribute("data-category")),
+        ),
+    )
+    .toEqual(["sale", "product"]);
   await expect(page.locator(".hero")).toHaveCount(1);
-  await expect(page.locator("#hero-note")).toContainText("примеры");
   await expect(page.getByRole("main")).toHaveCount(1);
-  const first = page.locator('[data-product-id="4001"]');
+  const first = popular.locator('[data-product-id="4001"]');
   await expect(first.locator("h3 a")).toHaveAttribute(
     "href",
     "/#product?id=4001&lang=ru",
@@ -279,7 +291,7 @@ test("public round trip and Account reentry reconcile cookies without resetting 
     localStorage.setItem("unrelated", "exact bytes");
     sessionStorage.setItem("biotact.tg1.request", '{"key":"kept"}');
   });
-  await page.locator(".group-tile").first().click();
+  await page.locator('[data-category="product"] .section-head a').click();
   await expect(page.locator("article")).toHaveCount(20);
   await page.locator("article h3 a").first().click();
   await expect(page.locator(".product-main")).toBeVisible();
@@ -383,14 +395,9 @@ test("responsive cards, gallery and drawer keyboard remain usable at wide, 390 a
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 960 });
     await page.goto("/");
-    await expect(page.locator(".home-grid article")).toHaveCount(4);
-    expect(
-      await page
-        .locator(".home-grid")
-        .evaluate(
-          (e) => getComputedStyle(e).gridTemplateColumns.split(" ").length,
-        ),
-    ).toBe(width === 1440 ? 4 : 2);
+    const row = page.locator('[data-category="product"] .product-row');
+    await expect(row.locator("article")).toHaveCount(8);
+    expect(await visibleCards(row)).toBe(width === 1440 ? 4 : 2);
     const media = page.locator(".card-media").first();
     const size = await media.boundingBox();
     expect(Math.abs((size?.width || 0) - (size?.height || 0))).toBeLessThan(1);

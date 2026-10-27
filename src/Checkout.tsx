@@ -425,7 +425,9 @@ export default function Checkout({
         </>
       )}
       <div className="guest-actions">
-        <button onClick={onBack}>{backLabel}</button>
+        <button disabled={working} onClick={onBack}>
+          {backLabel}
+        </button>
         <button
           className="guest-place"
           disabled={

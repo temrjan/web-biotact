@@ -509,10 +509,17 @@ test("uncertain creation is resent once with the same key: lost request, lost re
     .poll(async () => (await page.request.get("/__test/held")).json())
     .toEqual({ held: true });
   await expect(page.locator(".guest-place")).toBeDisabled();
+  // The buyer cannot leave the review while the order request is pending (Captain decision U-5).
+  const back = page.getByRole("button", {
+    name: "Назад к данным",
+    exact: true,
+  });
+  await expect(back).toBeDisabled();
   await page.request.get("/__test/drop");
   await expect(page.locator(".guest-checkout [role=alert]")).toHaveText(
     "Не удалось подтвердить заказ на этом устройстве. Оформите заказ ещё раз.",
   );
+  await expect(back).toBeEnabled();
   keys = creates(seen).map((b) => b.idempotency_key);
   expect(keys).toHaveLength(4);
   expect(keys[3]).toBe(keys[2]);

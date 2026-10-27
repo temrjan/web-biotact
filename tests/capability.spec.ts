@@ -17,5 +17,16 @@ test("email-only context does not advertise disabled Telegram", async ({
   await expect(
     page.getByRole("link", { name: "Открыть официальный бот" }),
   ).toHaveCount(0);
+  await page.locator('.languages [lang="uz"]').click();
+  await expect(page.getByRole("alert")).toHaveText(
+    "Telegram orqali kirish hozircha mavjud emas.",
+  );
+  await expect(
+    page.getByText("Вход через Telegram сейчас недоступен."),
+  ).toHaveCount(0);
+  await page.locator('.languages [lang="ru"]').click();
+  await expect(page.getByRole("alert")).toHaveText(
+    "Вход через Telegram сейчас недоступен.",
+  );
   expect(requests).toBe(0);
 });

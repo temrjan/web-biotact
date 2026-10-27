@@ -1147,7 +1147,7 @@ export default function App() {
               change={changeQuantity}
             />
           )}
-          {loc.view === "account" && <Account />}
+          {loc.view === "account" && <Account lang={loc.lang} />}
           {loc.view === "invalid" && (
             <Recovery lang={loc.lang} title={t.invalid} />
           )}

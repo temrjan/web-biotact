@@ -1,6 +1,6 @@
 import type { Language } from "./catalogue";
 export interface Location {
-  view: "home" | "catalogue" | "product" | "account" | "invalid";
+  view: "home" | "catalogue" | "product" | "account" | "order" | "invalid";
   lang: Language;
   category?: number;
   q?: string;
@@ -18,7 +18,8 @@ export function parseLocation(hash: string): Location {
   const lang: Language = p.get("lang") === "uz" ? "uz" : "ru";
   const view = name || "home",
     base = { lang, page: 1 };
-  if (view === "home" || view === "account") return { ...base, view };
+  if (view === "home" || view === "account" || view === "order")
+    return { ...base, view };
   if (view === "product") {
     const value = id(p.get("id"));
     return value ? { ...base, view, id: value } : { ...base, view: "invalid" };
@@ -49,4 +50,15 @@ export function href(loc: Location): string {
   if (loc.view === "product" && loc.id) p.set("id", String(loc.id));
   p.set("lang", loc.lang);
   return `/#${loc.view}?${p}`;
+}
+/** The payment return address `/?view=order&lang=…` becomes the order view. */
+export function returnAddress(search: string): string | null {
+  const p = new URLSearchParams(search);
+  return p.get("view") === "order"
+    ? href({
+        view: "order",
+        lang: p.get("lang") === "uz" ? "uz" : "ru",
+        page: 1,
+      })
+    : null;
 }

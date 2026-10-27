@@ -342,6 +342,25 @@ export function safeMedia(value: string | null, video = false): string | null {
     return null;
   }
 }
+/**
+ * YouTube video ID of an admin video link (youtu.be/ID, youtube.com/watch?v=ID
+ * or /embed/ID, as the Mini App accepts); other links have no embeddable video.
+ */
+export function youtubeId(value: string | null): string | null {
+  const safe = safeMedia(value, true);
+  if (!safe) return null;
+  const u = new URL(safe);
+  const host = u.hostname.toLowerCase().replace(/^(www|m)\./, "");
+  const id =
+    host === "youtu.be"
+      ? u.pathname.split("/")[1]
+      : host === "youtube.com" || host === "youtube-nocookie.com"
+        ? u.pathname === "/watch"
+          ? u.searchParams.get("v")
+          : /^\/embed\/([^/]+)$/.exec(u.pathname)?.[1]
+        : null;
+  return id && /^[\w-]{11}$/.test(id) ? id : null;
+}
 export function price(p: Product): {
   current: string;
   previous: string | null;

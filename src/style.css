@@ -143,6 +143,20 @@ h3 {
   background: var(--bt-surface-selected);
   font-weight: 700;
 }
+.nav-primary > .basket-button {
+  justify-content: flex-start;
+  gap: 0.5rem;
+  border: 1px solid var(--bt-border);
+  background: var(--bt-surface);
+  box-shadow: var(--bt-shadow-raised);
+  color: var(--bt-text);
+}
+.nav-primary > .basket-button:hover:enabled {
+  background: var(--bt-surface-hover);
+}
+.nav-primary > .basket-button .basket-badge {
+  margin-left: auto;
+}
 .category-nav {
   display: grid;
   gap: 0.25rem;
@@ -230,9 +244,6 @@ h3 {
 .languages a[aria-current]:hover,
 .languages a[aria-current]:active {
   background: var(--bt-surface-selected);
-}
-.top-ai {
-  display: none;
 }
 .cart-icon {
   width: 22px;
@@ -549,26 +560,29 @@ h3 {
   gap: 0.75rem;
   margin: 1.5rem 0;
 }
+/* Category tabs read as headings: plain text, the current one green and underlined. */
+.filter-row {
+  gap: 0.5rem 1.5rem;
+}
 .filter-row a {
-  padding: 0.5rem 0.75rem;
-  background: var(--bt-surface);
-  border-radius: 0.625rem;
-  border: 1px solid var(--bt-border);
-  font-size: 0.9375rem;
+  padding: 0.25rem 0;
+  font-size: 1.0625rem;
   text-decoration: none;
   overflow-wrap: anywhere;
 }
 .filter-row [aria-current] {
-  background: var(--bt-action-subtle-selected);
+  color: var(--bt-action);
   font-weight: 700;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.35em;
 }
 .filter-row a:hover:not([aria-current]) {
-  background: var(--bt-neutral-hover);
+  color: var(--bt-action);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.35em;
 }
-.filter-row a:active:not([aria-current]) {
-  background: var(--bt-neutral-active);
-}
-.search-note,
 .result-count {
   margin-bottom: 1.5rem;
 }
@@ -633,6 +647,17 @@ h3 {
 .product-text p {
   margin-top: 1rem;
   white-space: pre-wrap;
+}
+.product-summary > .product-description {
+  margin-top: 1.5rem;
+}
+.product-text .product-note {
+  margin-top: 0;
+  padding: 1rem;
+  border: 1px solid var(--bt-note-border);
+  border-radius: var(--bt-radius-control);
+  background: var(--bt-note-background);
+  font-size: var(--bt-font-size-small);
 }
 .page-footer {
   margin: 0 2rem;
@@ -929,8 +954,12 @@ h3 {
   .menu-toggle {
     display: inline-flex;
   }
-  .top-ai {
-    display: inline-flex;
+  /* Phones keep the basket and menu in reach while scrolling. */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: var(--bt-layer-header);
+    background: var(--bt-canvas);
   }
   .assistant-open .workspace {
     margin-right: 0;

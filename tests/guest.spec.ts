@@ -195,9 +195,15 @@ test("RU wide: server quote, required terms, order view, one payment start, sign
   );
   expect(creates(seen)).toEqual([]);
 
-  await place(page, "ru");
+  // A double press with accepted terms sends one create request (WS-05).
+  await page.locator("#guest-accept").check();
+  await page.locator(".guest-place").evaluate((button: HTMLButtonElement) => {
+    button.click();
+    button.click();
+  });
   await expect(page).toHaveURL(/\/#order\?lang=ru$/);
   await expect(page.locator("dialog[open]")).toHaveCount(0);
+  expect(creates(seen)).toHaveLength(1);
   const [created] = (await server(page)).orders;
   expect(created).toBeDefined();
   await expect(page.locator("#order-title")).toHaveText(

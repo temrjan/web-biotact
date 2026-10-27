@@ -17,6 +17,8 @@ import Basket, {
 } from "./Basket";
 import * as api from "./catalogue";
 import { useGuestBasket } from "./guestBasket";
+import type { Order } from "./guest";
+import OrderView from "./Order";
 import { href, parseLocation, type Location } from "./navigation";
 
 const copy = {
@@ -766,6 +768,8 @@ export default function App() {
     beforeAdd?: BeforeAdd;
   } | null>(null);
   const [announcement, setAnnouncement] = useState(0);
+  // The latest creation response (with its CSRF token) stays in memory for the next order view.
+  const [created, setCreated] = useState<{ order: Order; epoch: number }>();
   const [compact, setCompact] = useState(
     () => window.matchMedia("(max-width: 999px)").matches,
   );
@@ -786,6 +790,7 @@ export default function App() {
         href({ ...previous, lang: "ru" }) === href({ ...next, lang: "ru" });
       // Cached language projections also invalidate a previous local review.
       if (previous.lang !== next.lang) setBasketLanguageRevision((n) => n + 1);
+      if (next.view !== "order") setCreated(undefined);
       hashRef.current = window.location.hash;
       setHash(window.location.hash);
       setSurface((current) =>
@@ -1148,6 +1153,15 @@ export default function App() {
             />
           )}
           {loc.view === "account" && <Account />}
+          {loc.view === "order" && (
+            <OrderView
+              key={created?.epoch ?? 0}
+              lang={loc.lang}
+              initial={created?.order ?? null}
+              sizeLabel={basketCopy[loc.lang].size}
+              onPaid={basket.removeBought}
+            />
+          )}
           {loc.view === "invalid" && (
             <Recovery lang={loc.lang} title={t.invalid} />
           )}
@@ -1247,6 +1261,16 @@ export default function App() {
             if (surface === "basket") dismiss();
           }}
           onKeyDown={dialogKeys}
+          onCreated={(order) => {
+            setCreated((old) => ({ order, epoch: (old?.epoch ?? 0) + 1 }));
+            setSurface(null);
+            window.location.hash =
+              href({ view: "order", lang: loc.lang, page: 1 }).split("#")[1] ||
+              "";
+            requestAnimationFrame(() =>
+              document.getElementById("content")?.focus(),
+            );
+          }}
         />
       )}
     </div>

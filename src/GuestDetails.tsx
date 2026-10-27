@@ -15,7 +15,7 @@ export const detailsCopy = {
     required: "Заполните это поле.",
     invalidPhone:
       "Укажите телефон с цифрами. Допустимы пробелы, скобки, дефисы, точки и плюс в начале.",
-    note: "Все поля обязательны. Телефон нужен для связи, без SMS-проверки. Данные остаются только в открытой форме и удалятся при её закрытии.",
+    note: "Все поля обязательны. Телефон нужен для связи по заказу, без SMS-проверки. Данные будут переданы продавцу вместе с заказом.",
     review: "Проверить данные",
     back: "Назад в корзину",
   },
@@ -27,16 +27,38 @@ export const detailsCopy = {
     required: "Bu maydonni toʻldiring.",
     invalidPhone:
       "Raqamli telefon kiriting. Boʻshliq, qavs, chiziqcha, nuqta va boshida plyus mumkin.",
-    note: "Barcha maydonlar majburiy. Telefon SMS-tekshiruvsiz aloqa uchun kerak. Maʼlumotlar faqat ochiq shaklda saqlanadi va u yopilganda oʻchadi.",
+    note: "Barcha maydonlar majburiy. Telefon buyurtma boʻyicha aloqa uchun kerak, SMS-tekshiruvsiz. Maʼlumotlar buyurtma bilan birga sotuvchiga yuboriladi.",
     review: "Maʼlumotlarni tekshirish",
     back: "Savatga qaytish",
   },
 };
+/** Field limits of the guest order request (spec S2 OC-02), counted in code points after trimming. */
+export const DETAIL_LIMITS = { name: 100, phone: 20, address: 300 };
+const length = (value: string) => [...value].length;
+function control(value: string, allowed = "") {
+  for (const c of value) {
+    const n = c.charCodeAt(0);
+    if ((n < 0x20 || (n >= 0x7f && n <= 0x9f)) && !allowed.includes(c))
+      return true;
+  }
+  return false;
+}
 export function validateDetails(value: DeliveryDetails) {
+  const name = value.name.trim(),
+    phone = value.phone.trim(),
+    address = value.address.trim(),
+    digits = phone.replace(/[^0-9]/g, "").length;
   return {
-    name: !value.name.trim(),
-    phone: !/\d/.test(value.phone) || !/^ *\+?[\d ().-]+$/.test(value.phone),
-    address: !value.address.trim(),
+    name: !name || length(name) > DETAIL_LIMITS.name || control(name),
+    phone:
+      length(phone) > DETAIL_LIMITS.phone ||
+      !/^\+?[0-9 ().-]+$/.test(phone) ||
+      digits < 9 ||
+      digits > 15,
+    address:
+      !address ||
+      length(address) > DETAIL_LIMITS.address ||
+      control(address, "\r\n"),
   };
 }
 export default function GuestDetails({
@@ -88,6 +110,7 @@ export default function GuestDetails({
           value: value[key],
           required: true,
           autoComplete: "off",
+          ...(key === "phone" ? {} : { maxLength: DETAIL_LIMITS[key] }),
           "aria-invalid": errors[key],
           "aria-describedby": errors[key] ? `guest-${key}-error` : undefined,
           onChange: (

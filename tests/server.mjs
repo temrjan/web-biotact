@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { createServer as viteServer } from "vite";
 import { boundary } from "./boundary.mjs";
+import { control as guestControl } from "./guest.boundary.mjs";
 const root = resolve(
   process.env.TG1_API_ROOT || "../miniapp-biotact/packages/api",
 );
@@ -74,9 +75,18 @@ const server = createServer(
   (req, res) => {
     const url = new URL(req.url || "/", "https://localhost:4173");
     if (url.pathname === "/__test/hold") {
+      const kind = url.searchParams.get("kind");
       nextHold =
-        url.searchParams.get("kind") === "create" ? "requests" : "complete";
+        kind === "guest-order"
+          ? "/api/v1/guest/orders"
+          : kind === "create"
+            ? "/telegram/requests"
+            : "/telegram/complete";
       res.end("ok");
+      return;
+    }
+    if (url.pathname.startsWith("/__test/guest/") && fixture) {
+      guestControl(req, res, url);
       return;
     }
     if (url.pathname === "/__test/held") {
@@ -129,7 +139,7 @@ const server = createServer(
       (process.env.CONSULTANT_BROWSER_FIXTURE === "1" &&
         url.pathname === "/__fixture/change")
     ) {
-      const hold = nextHold && url.pathname.endsWith("/telegram/" + nextHold);
+      const hold = nextHold && url.pathname.endsWith(nextHold);
       if (hold) nextHold = false;
       if (fixture) {
         if (hold) {
@@ -149,6 +159,8 @@ const server = createServer(
             held.drop = () => {
               res.writeHead = writeHead;
               res.end = end;
+              // A lost response carries none of its headers (cookies), as in native mode.
+              for (const name of res.getHeaderNames()) res.removeHeader(name);
               writeHead(503, {
                 "Content-Type": "application/json",
                 "Cache-Control": "no-store",

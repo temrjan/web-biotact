@@ -5,7 +5,7 @@ import {
   removePurchased,
   selectionAvailable,
 } from "./guestBasket";
-import { validateDetails } from "./GuestDetails";
+import { detailsCopy, validateDetails } from "./GuestDetails";
 import { product } from "./catalogue";
 
 const valid = { product_id: 17, size: " L ", quantity: 99 };
@@ -131,6 +131,13 @@ test("delivery validation equals the guest order limits: trimmed name 1-100 and 
       validateDetails({ ...value, phone }).phone,
       JSON.stringify(phone),
     ).toBe(true);
+  // The phone error states the 9-15 digit rule (Captain decision D-1, exact text).
+  expect(detailsCopy.ru.invalidPhone).toBe(
+    "Укажите телефон: от 9 до 15 цифр. Допустимы пробелы, скобки, дефисы, точки и плюс в начале.",
+  );
+  expect(detailsCopy.uz.invalidPhone).toBe(
+    "Telefonni kiriting: 9 tadan 15 tagacha raqam. Boʻshliq, qavs, chiziqcha, nuqta va boshida plyus mumkin.",
+  );
 });
 test("a paid order removes exactly its product and size lines, keeps others and repeats without change", () => {
   const items = [

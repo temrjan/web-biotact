@@ -1240,6 +1240,9 @@ test("guest validation, server review, unaccepted terms, draft lifetime and priv
   await phone.press("Enter");
   await expect(name).toBeFocused();
   await expect(page.locator(".guest-error")).toHaveCount(3);
+  await expect(page.locator("#guest-phone-error")).toHaveText(
+    "Укажите телефон: от 9 до 15 цифр. Допустимы пробелы, скобки, дефисы, точки и плюс в начале.",
+  );
   const details = {
     name: "李 Guest-Private <b>Тест</b>",
     phone: "+998 (90) 555-01.23",

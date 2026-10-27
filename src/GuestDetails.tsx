@@ -14,7 +14,7 @@ export const detailsCopy = {
     address: "Адрес доставки",
     required: "Заполните это поле.",
     invalidPhone:
-      "Укажите телефон с цифрами. Допустимы пробелы, скобки, дефисы, точки и плюс в начале.",
+      "Укажите телефон: от 9 до 15 цифр. Допустимы пробелы, скобки, дефисы, точки и плюс в начале.",
     note: "Все поля обязательны. Телефон нужен для связи по заказу, без SMS-проверки. Данные будут переданы продавцу вместе с заказом.",
     review: "Проверить данные",
     back: "Назад в корзину",
@@ -26,7 +26,7 @@ export const detailsCopy = {
     address: "Yetkazib berish manzili",
     required: "Bu maydonni toʻldiring.",
     invalidPhone:
-      "Raqamli telefon kiriting. Boʻshliq, qavs, chiziqcha, nuqta va boshida plyus mumkin.",
+      "Telefonni kiriting: 9 tadan 15 tagacha raqam. Boʻshliq, qavs, chiziqcha, nuqta va boshida plyus mumkin.",
     note: "Barcha maydonlar majburiy. Telefon buyurtma boʻyicha aloqa uchun kerak, SMS-tekshiruvsiz. Maʼlumotlar buyurtma bilan birga sotuvchiga yuboriladi.",
     review: "Maʼlumotlarni tekshirish",
     back: "Savatga qaytish",

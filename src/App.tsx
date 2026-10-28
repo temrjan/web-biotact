@@ -65,7 +65,6 @@ const copy = {
     inStock: "В наличии",
     outOfStock: "Нет в наличии",
     noPurchase: "Недоступен для покупки",
-    sizes: "Доступные размеры",
     description: "Описание",
     advantages: "Преимущества",
     info: "Дополнительная информация",
@@ -118,7 +117,6 @@ const copy = {
     inStock: "Mavjud",
     outOfStock: "Mavjud emas",
     noPurchase: "Xarid qilish mumkin emas",
-    sizes: "Mavjud oʻlchamlar",
     description: "Tavsif",
     advantages: "Afzalliklari",
     info: "Qoʻshimcha maʼlumot",
@@ -991,6 +989,7 @@ function Product({
         ?.quantity || 0
     : 0;
   const basket = basketCopy[lang];
+  const sizes = [...new Set(p.available_sizes.filter((v) => v.trim()))];
   const media = [
     ...new Set(
       [p.image_url, ...p.images].filter(
@@ -1046,28 +1045,28 @@ function Product({
           <h1>{p.name}</h1>
           <Price product={p} lang={lang} />
           <Availability product={p} lang={lang} />
-          {p.requires_size && p.available_sizes.length > 0 && (
-            <p>
-              {t.sizes}: {p.available_sizes.join(", ")}
-            </p>
-          )}
           <div className="detail-purchase">
-            {p.requires_size && (
-              <label className="size-choice">
-                {basket.size}
-                <select
+            {p.requires_size && sizes.length > 0 && (
+              // One button per available size (SZ1), as in the card size dialog.
+              <div className="size-choice">
+                <span aria-hidden="true">{basket.size}</span>
+                <div
+                  className="size-chips"
+                  role="group"
                   aria-label={`${basket.size}: ${p.name}`}
-                  value={selectedSize}
-                  onChange={(e) => setSelectedSize(e.target.value)}
                 >
-                  <option value="">{basket.choose}</option>
-                  {p.available_sizes.map((value) => (
-                    <option key={value} value={value}>
+                  {sizes.map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={selectedSize === value}
+                      onClick={() => setSelectedSize(value)}
+                    >
                       {value}
-                    </option>
+                    </button>
                   ))}
-                </select>
-              </label>
+                </div>
+              </div>
             )}
             <Quantity
               add

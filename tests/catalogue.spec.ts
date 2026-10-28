@@ -46,7 +46,13 @@ test("complete discovery, complete Home rows, server paging/search and canonical
     page.getByText("<b>Plain API description</b>", { exact: true }),
   ).toBeVisible();
   await expect(page.locator(".product-text b")).toHaveCount(0);
-  await expect(page.getByText("Доступные размеры: L, XL")).toBeVisible();
+  // Sizes are buttons; the old "Доступные размеры" line is gone (SZ1).
+  await expect(page.getByText(/Доступные размеры/)).toHaveCount(0);
+  await expect(
+    page
+      .getByRole("group", { name: "Размер: Synthetic Match 01" })
+      .getByRole("button"),
+  ).toHaveText(["L", "XL"]);
   // A non-YouTube video link has no embed and no longer opens externally.
   await expect(page.getByText("Смотреть видео")).toHaveCount(0);
   await expect(page.locator(".product-video")).toHaveCount(0);

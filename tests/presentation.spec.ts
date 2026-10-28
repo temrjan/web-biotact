@@ -62,6 +62,18 @@ async function productAddFocus(page: Page) {
   await expect(frame).toHaveCSS("outline-style", "solid");
   await expect(frame).toHaveCSS("outline-offset", "3px");
 }
+/** Choose a size with the product page size buttons (SZ1). */
+async function pickSize(page: Page, size: string) {
+  const button = page
+    .locator(".product-summary .size-chips")
+    .getByRole("button", { name: size, exact: true });
+  await button.click();
+  await expect(button).toHaveAttribute("aria-pressed", "true");
+}
+async function noSizeChosen(group: Locator) {
+  for (const button of await group.getByRole("button").all())
+    await expect(button).toHaveAttribute("aria-pressed", "false");
+}
 /** The open basket survived a language-only history step and has no language buttons. */
 async function basketStaysOpen(page: Page) {
   await expect(page.locator("dialog.basket-panel[open]")).toHaveCount(1);
@@ -327,18 +339,14 @@ test("Product detail requires an explicit available size, keeps canonical varian
   );
   await page.goto("/#product?id=4001");
   const detail = page.locator(".product-summary"),
-    choice = detail.getByRole("combobox");
-  await expect(choice).toHaveValue("");
-  await expect(choice.locator("option")).toHaveText([
-    "Выберите размер",
-    "L",
-    "XL",
-  ]);
+    choice = detail.getByRole("group", { name: "Размер: Synthetic Match 01" });
+  await expect(choice.getByRole("button")).toHaveText(["L", "XL"]);
+  await noSizeChosen(choice);
   await expect(detail.locator(".add")).toBeDisabled();
-  await choice.selectOption("L");
+  await pickSize(page, "L");
   await detail.locator(".add").click();
   await detail.locator("[data-more]").click();
-  await choice.selectOption("XL");
+  await pickSize(page, "XL");
   await expect(detail.locator(".add")).toBeEnabled();
   await detail.locator(".add").click();
   await page.locator(".basket-button").click();
@@ -355,12 +363,12 @@ test("Product detail requires an explicit available size, keeps canonical varian
   await expect(page.locator(firstCard + " output")).toHaveText("2");
   await expect(page.locator(firstCard + " .size-summary")).toContainText("L");
   await page.locator(firstCard + " h3 a").click();
-  await expect(choice).toHaveValue("");
+  await noSizeChosen(choice);
   await expect(detail.locator(".add")).toBeDisabled();
-  await choice.selectOption("XL");
+  await pickSize(page, "XL");
   await expect(detail.locator("output")).toHaveText("1");
   await detail.getByRole("button", { name: /Уменьшить количество/ }).click();
-  await choice.selectOption("L");
+  await pickSize(page, "L");
   await expect(detail.locator("output")).toHaveText("2");
   for (const id of [4002, 4003, 4005]) {
     await page.evaluate((id) => {
@@ -371,12 +379,88 @@ test("Product detail requires an explicit available size, keeps canonical varian
       String(id),
     );
     await expect(detail.locator(".add")).toBeDisabled();
-    if (id === 4005) {
-      await expect(choice).toHaveValue("");
-      await expect(choice.locator("option")).toHaveCount(1);
-    }
+    // A size product without any available size has no size buttons.
+    if (id === 4005) await expect(detail.locator(".size-chips")).toHaveCount(0);
     await expect(page.locator(".basket-badge")).toHaveText("2");
   }
+});
+
+test("product page size buttons: neutral face, hover and selected grey, green ring only for the keyboard, chosen size goes into the basket", async ({
+  page,
+}) => {
+  await fixture(page);
+  for (const [width, lang, name] of [
+    [1440, "ru", "Размер: Synthetic Match 01"],
+    [390, "uz", "Oʻlcham: Synthetic Match 01"],
+    [320, "ru", "Размер: Synthetic Match 01"],
+  ] as const) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`/#product?id=4001&lang=${lang}`);
+    const detail = page.locator(".product-summary"),
+      group = detail.getByRole("group", { name }),
+      add = detail.locator(".detail-purchase .add");
+    // Buttons instead of the dropdown; no "available sizes" line above.
+    await expect(detail.locator("select")).toHaveCount(0);
+    await expect(
+      detail.getByText(/Доступные размеры|Mavjud oʻlchamlar/),
+    ).toHaveCount(0);
+    await expect(detail.locator(".size-choice > span")).toHaveText(
+      lang === "ru" ? "Размер" : "Oʻlcham",
+    );
+    const l = group.getByRole("button", { name: "L", exact: true }),
+      xl = group.getByRole("button", { name: "XL", exact: true });
+    await expect(group.getByRole("button")).toHaveText(["L", "XL"]);
+    await noSizeChosen(group);
+    for (const button of [l, xl]) {
+      expect((await button.boundingBox())?.height).toBe(44);
+      await expect(button).toHaveCSS("background-color", "rgb(235, 235, 235)");
+      await expect(button).toHaveCSS("border", "1px solid rgb(196, 196, 196)");
+      await expect(button).toHaveCSS("border-radius", "10px");
+      await expect(button).toHaveCSS("box-shadow", "none");
+      await expect(button).toHaveCSS("color", "rgb(46, 37, 33)");
+      await expect(button).toHaveCSS("font-weight", "400");
+    }
+    // Pale green Add until a size is chosen (N1 = B).
+    await expect(add).toBeDisabled();
+    await expect(add).toHaveCSS("opacity", "0.6");
+    // Hover: our hover grey.
+    await l.hover();
+    await expect(l).toHaveCSS("background-color", "rgb(227, 227, 227)");
+    // Mouse choice: selected grey and bold, no green frame.
+    await xl.click();
+    await expect(xl).toHaveAttribute("aria-pressed", "true");
+    await expect(l).toHaveAttribute("aria-pressed", "false");
+    await expect(xl).toBeFocused();
+    expect(await xl.evaluate((n) => n.matches(":focus-visible"))).toBe(false);
+    await expect(xl).toHaveCSS("outline-style", "none");
+    await expect(xl).toHaveCSS("background-color", "rgb(221, 221, 221)");
+    await expect(xl).toHaveCSS("font-weight", "700");
+    await expect(xl).toHaveCSS("border", "1px solid rgb(196, 196, 196)");
+    await expect(l).toHaveCSS("font-weight", "400");
+    await expect(add).toBeEnabled();
+    await expect(add).toHaveCSS("opacity", "1");
+    // Keyboard: the green ring appears on Tab; Space chooses the size.
+    await page.keyboard.press("Shift+Tab");
+    await expect(l).toBeFocused();
+    await greenFocus(l);
+    await page.keyboard.press("Space");
+    await expect(l).toHaveAttribute("aria-pressed", "true");
+    await expect(xl).toHaveAttribute("aria-pressed", "false");
+    await expect(l).toHaveCSS("background-color", "rgb(221, 221, 221)");
+    await noOverflow(page);
+    await page.evaluate(() => localStorage.clear());
+  }
+  // The chosen size goes into the basket line, as with the dropdown.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/#product?id=4001&lang=ru");
+  await pickSize(page, "XL");
+  await page.locator(".product-summary .add").click();
+  await expect(page.locator(".product-summary output")).toHaveText("1");
+  await page.locator(".basket-button").click();
+  await expect(page.locator(".basket-row")).toHaveCount(1);
+  await expect(
+    page.locator('[data-basket-product="4001"][data-basket-size="XL"] output'),
+  ).toHaveText("1");
 });
 
 test("brand-green 2px keyboard focus remains visible on detail, fields and modal controls at compact sizes and 125% text", async ({
@@ -401,10 +485,9 @@ test("brand-green 2px keyboard focus remains visible on detail, fields and modal
     await page.keyboard.press("Escape");
     await expect(page.locator(".top-search")).toBeFocused();
     await greenFocus(page.locator('.gallery button[aria-pressed="true"]'));
-    const detail = page.locator(".product-summary"),
-      choice = detail.getByRole("combobox");
-    await greenFocus(choice);
-    await choice.selectOption("L");
+    const detail = page.locator(".product-summary");
+    await greenFocus(detail.locator(".size-chips button").first());
+    await pickSize(page, "L");
     await productAddFocus(page);
     await page.keyboard.press("Enter");
     await greenFocus(detail.locator("[data-more]"));
@@ -544,7 +627,7 @@ test("product page first Add is brand green, pale green while disabled; pressed 
       await expect(disabled).toHaveCSS("background-color", green);
       await expect(disabled).toHaveCSS("opacity", "0.6");
     }
-    await page.locator(".detail-purchase select").selectOption("L");
+    await pickSize(page, "L");
     await expect(page.locator(".detail-purchase .add")).toBeEnabled();
     await expect(page.locator(".detail-purchase .add")).toHaveCSS(
       "opacity",
@@ -952,7 +1035,7 @@ test("compact size popup preserves Home/Catalogue card height, keyboard focus an
   await page.evaluate(() => (window.location.hash = "product?id=4001&lang=uz"));
   await dialogCount(page, 0);
   await expect(page.locator("#content")).toBeFocused();
-  await page.locator(".product-summary select").selectOption("L");
+  await pickSize(page, "L");
   await expect(page.locator(".product-summary output")).toHaveText("1");
   const sized = source[0];
   if (!sized) throw new Error("Missing mutable sized fixture");
@@ -1794,7 +1877,7 @@ test("remembered exact variants survive reload, a new page and optional unavaila
   await expect(sale.locator("output")).toHaveText("2");
   await expect(page.locator(".basket-badge")).toHaveText("103");
   await page.locator(firstCard + " h3 a").click();
-  await page.locator(".product-summary select").selectOption("L");
+  await pickSize(page, "L");
   await expect(page.locator(".product-summary [data-more]")).toBeDisabled();
   await page.locator(".basket-button").click();
   await expect(

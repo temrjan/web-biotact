@@ -3040,7 +3040,14 @@ test("phone header hides on downward scroll and returns on upward scroll; never 
   await scrollPage(page, 600);
   await expect(bar).toHaveCSS("transform", "none");
   expect((await bar.boundingBox())?.y).toBe(0);
+  // Focus leaving the header after that scroll does not slide it away by
+  // itself (OPT-01); the next downward scroll does.
   await page.locator("#content").focus();
+  await headerShown(page, true);
+  await page.waitForTimeout(400);
+  expect((await bar.boundingBox())?.y).toBe(0);
+  await page.mouse.wheel(0, 300);
+  await headerShown(page, false);
 
   // Each surface and the expanded search keep the header on screen.
   for (const open of [

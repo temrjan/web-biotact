@@ -1616,6 +1616,15 @@ export default function App() {
           data-hidden={headerScroll.hidden || undefined}
           // Focus that reaches the header (Tab, focus return) shows it.
           onFocus={headerScroll.reveal}
+          // Focus leaving it after a scroll made while focus was inside does
+          // not slide it away by itself; the next downward scroll does.
+          onBlur={(e) => {
+            if (
+              !(e.relatedTarget instanceof Node) ||
+              !e.currentTarget.contains(e.relatedTarget)
+            )
+              headerScroll.reveal();
+          }}
           onKeyDown={(e) => {
             if (compact && searchOpen && e.key === "Escape") {
               e.preventDefault();

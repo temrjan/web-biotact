@@ -413,8 +413,83 @@ function useCompactWidth() {
     () => window.matchMedia(COMPACT_QUERY).matches,
   );
 }
+/** Phone row hint (M6): random delay after the row comes into view, in ms. */
+const ROW_HINT_DELAY = [200, 600] as const;
+/** Phone row hint distance as a share of one card, so the first card stays partly visible. */
+const ROW_HINT_SHARE = [0.3, 0.55] as const;
+const between = ([low, high]: readonly [number, number]) =>
+  low + Math.random() * (high - low);
+/**
+ * Phones (M6): a row whose cards do not fit, when it first comes into view,
+ * waits a small random delay and smoothly scrolls a small random distance, and
+ * stays there. Once per page view; not under reduced motion; not after the
+ * visitor touched, focused or scrolled that row. Snapping is off for a shifted
+ * row (re-enabling it would snap the row straight back).
+ */
+function useRowHint(row: HTMLDivElement | null, enabled: boolean) {
+  const done = useRef(false);
+  useEffect(() => {
+    if (!row || !enabled || done.current) return;
+    let timer = 0;
+    const touched = () => {
+      done.current = true;
+      window.clearTimeout(timer);
+    };
+    const inputs = [
+      "pointerdown",
+      "touchstart",
+      "wheel",
+      "keydown",
+      "focusin",
+      "scroll",
+    ];
+    for (const type of inputs)
+      row.addEventListener(type, touched, { passive: true });
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (done.current) observer.disconnect();
+        if (
+          done.current ||
+          !entries.some((entry) => entry.isIntersecting) ||
+          !window.matchMedia(COMPACT_QUERY).matches
+        )
+          return;
+        observer.disconnect();
+        timer = window.setTimeout(() => {
+          const card = row.firstElementChild,
+            max = row.scrollWidth - row.clientWidth;
+          if (
+            done.current ||
+            row.scrollLeft > 1 ||
+            max <= 1 ||
+            !(card instanceof HTMLElement) ||
+            !window.matchMedia(COMPACT_QUERY).matches ||
+            window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          )
+            return;
+          done.current = true;
+          row.dataset.hint = "";
+          row.scrollTo({
+            left: Math.min(
+              max,
+              Math.round(card.offsetWidth * between(ROW_HINT_SHARE)),
+            ),
+            behavior: "smooth",
+          });
+        }, between(ROW_HINT_DELAY));
+      },
+      { threshold: 0.5 },
+    );
+    observer.observe(row);
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(timer);
+      for (const type of inputs) row.removeEventListener(type, touched);
+    };
+  }, [row, enabled]);
+}
 /** Scroll state of one horizontal product row, for its header control. */
-function useSlider() {
+function useSlider({ hint = false }: { hint?: boolean } = {}) {
   const [row, setRow] = useState<HTMLDivElement | null>(null);
   const [edges, setEdges] = useState({
     start: true,
@@ -449,6 +524,7 @@ function useSlider() {
       row.removeEventListener("scroll", measure);
     };
   }, [row]);
+  useRowHint(row, hint);
   return {
     ...edges,
     // Arrows only on desktop, for a row that exists and scrolls (V1, DES-01, M6).
@@ -576,7 +652,7 @@ function CategoryRow({
   const read = useRead(`${lang}:${category.id}`, (s) =>
     api.categoryProducts(lang, s, category.id),
   );
-  const slider = useSlider();
+  const slider = useSlider({ hint: true });
   // The Mini App hides a category section without products.
   if (read.result.status === "ready" && !read.result.data.length) return null;
   const id = `home-${category.slug}`;
@@ -640,7 +716,7 @@ function Home({
     Promise.all([api.banners(lang, s), api.bannerInterval(s)]),
   );
   const sale = useRead(lang, (s) => api.saleProducts(lang, s));
-  const saleSlider = useSlider();
+  const saleSlider = useSlider({ hint: true });
   const ready = categories.status === "ready" ? categories.data : [];
   return (
     <>

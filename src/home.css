@@ -333,6 +333,10 @@
     grid-auto-columns: calc((100% - 1rem) / 2);
     gap: 1rem;
   }
+  /* A row shifted by the phone hint (M6) stays where it stopped. */
+  .product-row[data-hint] {
+    scroll-snap-type: none;
+  }
 }
 @media (max-width: 600px) {
   .consultation-form,

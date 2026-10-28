@@ -2386,6 +2386,110 @@ test("row header: Все link while a row loads, fails or does not scroll; arrow
   await expect(page).toHaveURL(/#catalogue\?category=303&page=1&lang=ru$/);
 });
 
+test("phone home rows shift once by a small random distance when they come into view and stay; not under reduced motion, after a touch or a scroll, or on desktop", async ({
+  page,
+}) => {
+  await fixture(page);
+  // Pin Math.random per page view, so both ends of the random ranges are proven.
+  await page.addInitScript(() => {
+    const pinned = sessionStorage.getItem("pinned-random");
+    if (pinned !== null) Math.random = () => Number(pinned);
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const row = page.locator('[data-category="product"] .product-row'),
+    sale = page.locator('[data-category="sale"] .product-row');
+  const left = () => row.evaluate((n) => n.scrollLeft);
+  /** Open Home in a new page view, optionally pinning Math.random. */
+  async function open(random: number | null) {
+    await page.goto("/#catalogue?page=1");
+    await page.evaluate((random) => {
+      if (random === null) sessionStorage.removeItem("pinned-random");
+      else sessionStorage.setItem("pinned-random", String(random));
+    }, random);
+    await page.goto("/");
+    await page.reload();
+    await expect(row.locator("article")).toHaveCount(40);
+  }
+  /** Wait until the row has moved and stopped; returns its offset. */
+  async function settled() {
+    await expect.poll(left, { timeout: 3000 }).toBeGreaterThan(0);
+    let previous = -1,
+      current = await left();
+    while (current !== previous) {
+      await page.waitForTimeout(150);
+      previous = current;
+      current = await left();
+    }
+    return current;
+  }
+  const cardWidth = () =>
+    row
+      .locator("article")
+      .first()
+      .evaluate((n) => (n as HTMLElement).offsetWidth);
+  for (const random of [0, 0.999]) {
+    await open(random);
+    // Not before the row comes into view.
+    await page.waitForTimeout(800);
+    expect(await left()).toBe(0);
+    await row.scrollIntoViewIfNeeded();
+    const shift = await settled(),
+      card = await cardWidth();
+    // Below one card width: part of the first card stays visible.
+    expect(shift).toBeGreaterThanOrEqual(Math.floor(card * 0.3));
+    expect(shift).toBeLessThanOrEqual(Math.ceil(card * 0.55));
+    await expect(row.locator("article").first()).toBeInViewport({
+      ratio: 0.4,
+    });
+    // It stays: no return, no snapping back, not replayed on the next visit.
+    await expect(row).toHaveCSS("scroll-snap-type", "none");
+    await page.waitForTimeout(2000);
+    expect(await left()).toBe(shift);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(300);
+    await row.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(1200);
+    expect(await left()).toBe(shift);
+  }
+  // A row whose cards fit does not move (the sale row has one product).
+  await sale.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(1200);
+  expect(await sale.evaluate((n) => n.scrollLeft)).toBe(0);
+  // The visitor touched the row before the hint: it does not move.
+  await open(null);
+  await row.evaluate((n) => {
+    n.scrollIntoView({ block: "center" });
+    n.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  });
+  await page.waitForTimeout(1500);
+  expect(await left()).toBe(0);
+  // The visitor scrolled the row before the hint: it stays where they left it.
+  await open(null);
+  await row.evaluate((n) => {
+    n.scrollIntoView({ block: "center" });
+    n.scrollBy({ left: n.clientWidth });
+  });
+  const own = await left();
+  expect(own).toBeGreaterThan(0);
+  await page.waitForTimeout(1500);
+  expect(await left()).toBe(own);
+  await expect(row).not.toHaveAttribute("data-hint");
+  // Reduced motion: no shift at all.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await open(null);
+  await row.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(1500);
+  expect(await left()).toBe(0);
+  // Desktop: no shift; the arrows scroll the row.
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await open(null);
+  await row.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(1500);
+  expect(await left()).toBe(0);
+  await expect(row).toHaveCSS("scroll-snap-type", "x mandatory");
+});
+
 test("side menu shows no per-item loading or error text; the page keeps its own retry", async ({
   page,
 }) => {

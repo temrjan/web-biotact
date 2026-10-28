@@ -4,6 +4,7 @@ import {
   useState,
   type KeyboardEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 import Account from "./Account";
 import Assistant, { type BeforeAdd } from "./Assistant";
@@ -1042,6 +1043,64 @@ function Search({ loc, onClose }: { loc: Location; onClose?: () => void }) {
     </form>
   );
 }
+/** Scroll travel that changes the phone header state; smaller moves accumulate. */
+const HEADER_SCROLL_THRESHOLD = 10;
+/**
+ * Phone header hides on downward scroll and returns on upward scroll (M5).
+ * `active` is false on desktop and while a surface or the search is open; the
+ * header is shown on every change of `active` or `view`. Travel counts only
+ * after the visitor's own scroll input since that change, so content loading
+ * into a new view (and the browser's scroll clamping and restoration) never
+ * hides it. The position is clamped, so overscroll bounce is not travel.
+ */
+function useHiddenHeader(
+  active: boolean,
+  view: string,
+  header: RefObject<HTMLElement | null>,
+) {
+  const [hidden, setHidden] = useState(false);
+  const [seen, setSeen] = useState({ active, view });
+  if (seen.active !== active || seen.view !== view) {
+    setSeen({ active, view });
+    setHidden(false);
+  }
+  useEffect(() => {
+    if (!active) return;
+    const position = () =>
+      Math.min(
+        Math.max(window.scrollY, 0),
+        Math.max(document.documentElement.scrollHeight - window.innerHeight, 0),
+      );
+    let last = position(),
+      frame = 0,
+      armed = false;
+    const arm = () => {
+      armed = true;
+    };
+    const update = () => {
+      frame = 0;
+      const y = position();
+      if (!armed) last = y;
+      if (Math.abs(y - last) < HEADER_SCROLL_THRESHOLD) return;
+      setHidden(y > last && y > (header.current?.offsetHeight ?? 0));
+      last = y;
+    };
+    const scroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    const inputs = ["wheel", "touchstart", "keydown", "pointerdown"];
+    for (const type of inputs)
+      window.addEventListener(type, arm, { capture: true, passive: true });
+    window.addEventListener("scroll", scroll, { passive: true });
+    return () => {
+      for (const type of inputs)
+        window.removeEventListener(type, arm, { capture: true });
+      window.removeEventListener("scroll", scroll);
+      cancelAnimationFrame(frame);
+    };
+  }, [active, view, header]);
+  return { hidden, reveal: () => setHidden(false) };
+}
 export default function App() {
   const [hash, setHash] = useState(window.location.hash);
   const loc = parseLocation(hash),
@@ -1065,6 +1124,12 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const searchToggle = useRef<HTMLButtonElement>(null),
     searchFocusReturn = useRef(false);
+  const header = useRef<HTMLElement>(null);
+  const headerScroll = useHiddenHeader(
+    compact && surface === null && !searchOpen,
+    hash,
+    header,
+  );
   const hashRef = useRef(hash);
   const dialog = useRef<HTMLDialogElement>(null),
     assistantDialog = useRef<HTMLDialogElement>(null),
@@ -1416,7 +1481,11 @@ export default function App() {
       </dialog>
       <div className="workspace">
         <header
+          ref={header}
           className="topbar"
+          data-hidden={headerScroll.hidden || undefined}
+          // Focus that reaches the header (Tab, focus return) shows it.
+          onFocus={headerScroll.reveal}
           onKeyDown={(e) => {
             if (compact && searchOpen && e.key === "Escape") {
               e.preventDefault();

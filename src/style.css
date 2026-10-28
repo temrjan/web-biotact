@@ -1072,12 +1072,19 @@ h3 {
   .topbar .search button {
     min-height: calc(var(--bt-control-min-height) - 2 * var(--bt-border-width));
   }
-  /* Phones keep the basket and menu in reach while scrolling. */
+  /*
+   * Phones: the sticky top bar slides away on downward scroll and returns on
+   * upward scroll (M5); focus inside it always keeps it on screen.
+   */
   .topbar {
     position: sticky;
     top: 0;
     z-index: var(--bt-layer-header);
     background: var(--bt-canvas);
+    transition: transform 0.2s ease;
+  }
+  .topbar[data-hidden]:not(:focus-within) {
+    transform: translateY(-100%);
   }
   .assistant-open .workspace {
     margin-right: 0;
@@ -1115,6 +1122,11 @@ h3 {
   .home-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1rem;
+  }
+}
+@media (max-width: 999px) and (prefers-reduced-motion: reduce) {
+  .topbar {
+    transition: none;
   }
 }
 @media (max-width: 600px) {

@@ -2290,7 +2290,7 @@ test("side menu shows no per-item loading or error text; the page keeps its own 
   );
 });
 
-test("basket sits in the side menu on desktop and in the sticky top bar on phones", async ({
+test("basket sits in the side menu on desktop and in the phone top bar that returns on upward scroll", async ({
   page,
 }) => {
   await fixture(page);
@@ -2333,16 +2333,19 @@ test("basket sits in the side menu on desktop and in the sticky top bar on phone
   await expect(
     page.locator(".sidebar .basket-button, .drawer .basket-button"),
   ).toHaveCount(0);
-  await page
-    .locator('.product-grid [data-product-id="4020"]')
-    .scrollIntoViewIfNeeded();
-  expect(await page.evaluate(() => scrollY)).toBeGreaterThan(1000);
+  // Focus returned to the AI button above would keep the header on screen.
+  await page.locator("#content").focus();
+  await page.mouse.move(195, 400);
+  await page.mouse.wheel(0, 1600);
+  await page.waitForFunction(() => scrollY > 1000);
+  await headerShown(page, false);
+  await page.mouse.wheel(0, -200);
+  await headerShown(page, true);
   await expect(page.locator(".topbar")).toHaveCSS("position", "sticky");
-  expect((await page.locator(".topbar").boundingBox())?.y).toBe(0);
   await page.locator('.product-grid [data-product-id="4019"] .add').click();
   await expect(topBasket.locator(".basket-badge")).toHaveText("2");
   await expect(topBasket).toBeInViewport();
-  // The sticky bar stays above cards and their sale badges.
+  // The returned sticky bar stays above cards and their sale badges.
   const hit = await topBasket.evaluate((n) => {
     const r = n.getBoundingClientRect();
     return n.contains(
@@ -2357,6 +2360,33 @@ test("basket sits in the side menu on desktop and in the sticky top bar on phone
   await noOverflow(page);
 });
 
+/** Two animation frames: the header scroll handler runs in one. */
+async function frames(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise((done) =>
+        requestAnimationFrame(() => requestAnimationFrame(done)),
+      ),
+  );
+}
+/** The phone top bar is on screen at y = 0, or slid fully above it (M5). */
+async function headerShown(page: Page, shown: boolean) {
+  const bar = page.locator(".topbar");
+  if (shown) await expect(bar).not.toHaveAttribute("data-hidden");
+  else await expect(bar).toHaveAttribute("data-hidden", "true");
+  await expect(bar).toHaveCSS(
+    "transform",
+    shown ? "none" : "matrix(1, 0, 0, 1, 0, -69)",
+  );
+  await expect
+    .poll(async () => (await bar.boundingBox())?.y)
+    .toBe(shown ? 0 : -69);
+}
+/** Scroll by script (also works under a modal scroll lock) and let a frame pass. */
+async function scrollPage(page: Page, by: number) {
+  await page.evaluate((y) => window.scrollBy(0, y), by);
+  await frames(page);
+}
 /** One phone header icon: a 44px plate-less brand-green button with its name. */
 async function headerIcon(icon: Locator, name: string) {
   await expect(icon).toBeVisible();
@@ -2536,6 +2566,106 @@ test("phone header is one row of icons with in-place search; Account and RU/UZ m
   ).toHaveCount(1);
   await expect(page.locator(".menu-toggle")).toBeHidden();
   expect((await top.boundingBox())?.height).toBe(79);
+});
+
+test("phone header hides on downward scroll and returns on upward scroll; never hidden with a surface, the search or focus inside", async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/#catalogue?page=1&lang=ru");
+  await expect(page.locator(".product-grid article")).toHaveCount(20);
+  const bar = page.locator(".topbar");
+  await expect(bar).toHaveCSS("transition-duration", "0.2s");
+  await page.mouse.move(195, 500);
+  // Travel within the header height at the top of the page keeps it.
+  await page.mouse.wheel(0, 40);
+  await page.waitForFunction(() => scrollY >= 40);
+  await frames(page);
+  await headerShown(page, true);
+  await page.mouse.wheel(0, 600);
+  await headerShown(page, false);
+  await expect(page.locator(".menu-toggle")).not.toBeInViewport();
+  // A move below the threshold (bounce, address bar) changes nothing.
+  await scrollPage(page, -6);
+  await headerShown(page, false);
+  await page.mouse.wheel(0, -120);
+  await headerShown(page, true);
+  await scrollPage(page, 600);
+  await headerShown(page, false);
+  // Reaching the top shows it.
+  await scrollPage(page, -10000);
+  await headerShown(page, true);
+
+  // Focus in the header shows it and keeps it while scrolling.
+  await scrollPage(page, 800);
+  await headerShown(page, false);
+  await page.locator(".top-search").focus();
+  await headerShown(page, true);
+  await scrollPage(page, 600);
+  await expect(bar).toHaveCSS("transform", "none");
+  expect((await bar.boundingBox())?.y).toBe(0);
+  await page.locator("#content").focus();
+
+  // Each surface and the expanded search keep the header on screen.
+  for (const open of [
+    ".menu-toggle",
+    ".top-search",
+    ".top-ai",
+    ".topbar .basket-button",
+  ]) {
+    await scrollPage(page, -10000);
+    await headerShown(page, true);
+    await page.locator(open).click();
+    await scrollPage(page, 900);
+    expect(await page.evaluate(() => scrollY)).toBeGreaterThan(800);
+    await headerShown(page, true);
+    await page.keyboard.press("Escape");
+    await expect(page.locator(open)).toBeFocused();
+    await headerShown(page, true);
+  }
+  // A surface opened from the page while the header is hidden shows it.
+  await page.locator("#content").focus();
+  await scrollPage(page, -10000);
+  await page.mouse.wheel(0, 400);
+  await headerShown(page, false);
+  await page.locator('[data-product-id="4001"] .add').click();
+  await expect(page.locator(".size-picker")).toBeVisible();
+  await headerShown(page, true);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".size-picker")).toBeHidden();
+  await headerShown(page, true);
+  // A view change shows it.
+  await page.mouse.wheel(0, 400);
+  await headerShown(page, false);
+  await page.evaluate(() => (location.hash = "#catalogue?page=2&lang=ru"));
+  await expect(page.locator(".product-grid article")).toHaveCount(20);
+  await headerShown(page, true);
+  // Content loading into the new view and scripted scrolling are not the
+  // visitor's travel; the next own scroll input counts again.
+  await scrollPage(page, 800);
+  await headerShown(page, true);
+  await page.mouse.wheel(0, 300);
+  await headerShown(page, false);
+
+  // Reduced motion: no slide animation.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(bar).toHaveCSS("transition-duration", "0s");
+  await scrollPage(page, -10000);
+  await page.mouse.wheel(0, 600);
+  await headerShown(page, false);
+  await page.emulateMedia({ reducedMotion: null });
+
+  // Desktop: the top bar stays in the page flow and never hides.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(bar).not.toHaveAttribute("data-hidden");
+  await expect(bar).toHaveCSS("position", "static");
+  await scrollPage(page, -10000);
+  await page.mouse.wheel(0, 800);
+  await page.waitForFunction(() => scrollY > 500);
+  await frames(page);
+  await expect(bar).not.toHaveAttribute("data-hidden");
+  await expect(bar).toHaveCSS("transform", "none");
 });
 
 test("product page follows the Mini App: description, composition, disclaimer note, embedded video and recommended slider", async ({

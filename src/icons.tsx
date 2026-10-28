@@ -125,3 +125,54 @@ export function GlobeIcon() {
     </Icon>
   );
 }
+/** Lucide `layout-grid`. */
+export function LayoutGridIcon() {
+  return (
+    <Icon>
+      <rect width="7" height="7" x="3" y="3" rx="1" />
+      <rect width="7" height="7" x="14" y="3" rx="1" />
+      <rect width="7" height="7" x="14" y="14" rx="1" />
+      <rect width="7" height="7" x="3" y="14" rx="1" />
+    </Icon>
+  );
+}
+/** Lucide `pill`. */
+export function PillIcon() {
+  return (
+    <Icon>
+      <path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z" />
+      <path d="m8.5 8.5 7 7" />
+    </Icon>
+  );
+}
+/** Lucide `gift`. */
+export function GiftIcon() {
+  return (
+    <Icon>
+      <rect x="3" y="8" width="18" height="4" rx="1" />
+      <path d="M12 8v13" />
+      <path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7" />
+      <path d="M7.5 8a2.5 2.5 0 0 1 0-5A4.8 8 0 0 1 12 8a4.8 8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5" />
+    </Icon>
+  );
+}
+/** Lucide `cooking-pot`. */
+export function CookingPotIcon() {
+  return (
+    <Icon>
+      <path d="M2 12h20" />
+      <path d="M20 12v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8" />
+      <path d="m4 8 16-4" />
+      <path d="m8.86 6.78-.45-1.81a2 2 0 0 1 1.45-2.43l1.94-.48a2 2 0 0 1 2.43 1.46l.45 1.8" />
+    </Icon>
+  );
+}
+/** Lucide `heart-pulse`. */
+export function HeartPulseIcon() {
+  return (
+    <Icon>
+      <path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5" />
+      <path d="M3.22 13H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27" />
+    </Icon>
+  );
+}

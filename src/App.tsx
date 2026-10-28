@@ -31,7 +31,12 @@ import {
   ChevronLeft,
   ChevronRight,
   CloseIcon,
+  CookingPotIcon,
+  GiftIcon,
   GlobeIcon,
+  HeartPulseIcon,
+  LayoutGridIcon,
+  PillIcon,
   SearchIcon,
   SparklesIcon,
   UserIcon,
@@ -145,6 +150,13 @@ const copy = {
   },
 };
 const slugs = ["product", "vitaminy-set", "tehnika", "active-life"];
+/** Approved menu icon set A (D9), keyed by category slug. */
+const categoryIcons: Record<string, () => ReactNode> = {
+  product: PillIcon,
+  "vitaminy-set": GiftIcon,
+  tehnika: CookingPotIcon,
+  "active-life": HeartPulseIcon,
+};
 type Read<T> =
   | { status: "loading" }
   | { status: "error"; error: unknown }
@@ -1390,12 +1402,16 @@ export default function App() {
         </button>
         {expanded && (
           <div className="category-nav">
-            <a href={all}>{t.all}</a>
+            <a href={all}>
+              <LayoutGridIcon />
+              {t.all}
+            </a>
             {slugs.map((slug, i) => {
               const c =
                 cats.result.status === "ready"
                   ? cats.result.data.find((v) => v.slug === slug)
                   : undefined;
+              const CategoryIcon = categoryIcons[slug];
               return c ? (
                 <a
                   key={slug}
@@ -1406,10 +1422,12 @@ export default function App() {
                     category: c.id,
                   })}
                 >
+                  {CategoryIcon && <CategoryIcon />}
                   {c.name}
                 </a>
               ) : cats.result.status === "ready" ? (
                 <span key={slug} className="muted">
+                  {CategoryIcon && <CategoryIcon />}
                   {t.groups[i]} — {t.missing}
                 </span>
               ) : null;

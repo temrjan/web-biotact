@@ -2290,6 +2290,92 @@ test("side menu shows no per-item loading or error text; the page keeps its own 
   );
 });
 
+/**
+ * S1/S2 in one menu: each category entry has its set-A icon in brand green;
+ * hairlines separate category entries and nothing else.
+ */
+async function categoryMenu(menu: Locator) {
+  const entries = menu.locator(".category-nav > *");
+  await expect(entries).toHaveCount(5);
+  const marks = await entries.evaluateAll((nodes) =>
+    nodes.map((n) => {
+      const svg = n.querySelector("svg");
+      const r = svg?.getBoundingClientRect();
+      const line = getComputedStyle(n, "::before");
+      return {
+        icons: n.querySelectorAll("svg").length,
+        // First drawing primitive identifies the Lucide icon.
+        shape: svg?.firstElementChild?.getAttribute("d") ?? svg?.innerHTML,
+        size: [r?.width, r?.height],
+        colour: svg && getComputedStyle(svg).color,
+        divider:
+          line.content === "none"
+            ? null
+            : `${line.borderTopWidth} ${line.borderTopStyle} ${line.borderTopColor}`,
+      };
+    }),
+  );
+  expect(marks.map((m) => m.icons)).toEqual([1, 1, 1, 1, 1]);
+  expect(marks.map((m) => m.shape?.slice(0, 18))).toEqual([
+    '<rect width="7" he', // layout-grid: Все товары
+    "m10.5 20.5 10-10a4", // pill: product
+    '<rect x="3" y="8" ', // gift: vitaminy-set
+    "M2 12h20", // cooking-pot: tehnika
+    "M2 9.5a5.5 5.5 0 0", // heart-pulse: active-life
+  ]);
+  for (const m of marks) {
+    expect(m.size).toEqual([20, 20]);
+    expect(m.colour).toBe("rgb(12, 61, 43)");
+  }
+  expect(marks.map((m) => m.divider)).toEqual([
+    null,
+    "1px solid rgb(214, 214, 214)",
+    "1px solid rgb(214, 214, 214)",
+    "1px solid rgb(214, 214, 214)",
+    "1px solid rgb(214, 214, 214)",
+  ]);
+  // Top-level menu entries keep no divider.
+  expect(
+    await menu
+      .locator(".nav-primary > *")
+      .evaluateAll((nodes) =>
+        nodes.every((n) => getComputedStyle(n, "::before").content === "none"),
+      ),
+  ).toBe(true);
+}
+
+test("side menu and phone menu separate category entries with hairlines and show the approved icons", async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/#home?lang=ru");
+  const side = page.locator(".sidebar");
+  await expect(side.locator(".category-nav a")).toHaveCount(4);
+  await categoryMenu(side);
+  // Each icon sits before its name; the names and targets are unchanged.
+  await expect(side.locator(".category-nav a")).toHaveText([
+    "Все товары",
+    "Нутриенты",
+    "Наборы",
+    "Техника",
+  ]);
+  await expect(
+    side.getByRole("link", { name: "Нутриенты", exact: true }),
+  ).toHaveAttribute("href", "/#catalogue?category=301&page=1&lang=ru");
+  await noOverflow(page);
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/#home?lang=uz");
+    await page.locator(".menu-toggle").click();
+    const drawer = page.locator(".drawer");
+    await expect(drawer.locator(".category-nav a")).toHaveCount(4);
+    await categoryMenu(drawer);
+    await noOverflow(page);
+    await page.keyboard.press("Escape");
+  }
+});
+
 test("basket sits in the side menu on desktop and in the phone top bar that returns on upward scroll", async ({
   page,
 }) => {

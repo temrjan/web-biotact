@@ -2,6 +2,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
@@ -399,10 +400,28 @@ function Recovery({ lang, title }: { lang: api.Language; title: string }) {
     </div>
   );
 }
-/** Scroll state of one horizontal product row, for its header arrows. */
+/** The site's one layout breakpoint: phones and tablets below 1000px. */
+const COMPACT_QUERY = "(max-width: 999px)";
+function subscribeCompact(change: () => void) {
+  const media = window.matchMedia(COMPACT_QUERY);
+  media.addEventListener("change", change);
+  return () => media.removeEventListener("change", change);
+}
+function useCompactWidth() {
+  return useSyncExternalStore(
+    subscribeCompact,
+    () => window.matchMedia(COMPACT_QUERY).matches,
+  );
+}
+/** Scroll state of one horizontal product row, for its header control. */
 function useSlider() {
   const [row, setRow] = useState<HTMLDivElement | null>(null);
-  const [edges, setEdges] = useState({ start: true, end: true });
+  const [edges, setEdges] = useState({
+    start: true,
+    end: true,
+    overflow: false,
+  });
+  const compact = useCompactWidth();
   useEffect(() => {
     if (!row) return;
     const measure = () => {
@@ -411,9 +430,12 @@ function useSlider() {
       const next = {
         start: row.scrollLeft <= 1,
         end: row.scrollLeft >= max - 1,
+        overflow: max > 1,
       };
       setEdges((current) =>
-        current.start === next.start && current.end === next.end
+        current.start === next.start &&
+        current.end === next.end &&
+        current.overflow === next.overflow
           ? current
           : next,
       );
@@ -429,6 +451,8 @@ function useSlider() {
   }, [row]);
   return {
     ...edges,
+    // Arrows only on desktop, for a row that exists and scrolls (V1, DES-01, M6).
+    arrows: !compact && row !== null && edges.overflow,
     attach: setRow,
     scroll(direction: -1 | 1) {
       if (!row) return;
@@ -443,8 +467,10 @@ function useSlider() {
 }
 type Slider = ReturnType<typeof useSlider>;
 /**
- * Row header control in the basket stepper frame: [‹] Все [›]. Rows without a
- * catalogue target show the arrows only; an arrow at its end stays focusable.
+ * Row header control. With arrows (desktop, the row exists and scrolls): the
+ * basket stepper frame [‹] Все [›], or the arrows only for rows without a
+ * catalogue target; an arrow at its end stays focusable. Without arrows (phones,
+ * loading, error, no overflow): the plain "Все ›" link, or nothing.
  */
 function SliderControls({
   slider,
@@ -458,6 +484,17 @@ function SliderControls({
   more?: { href: string; title: string };
 }) {
   const t = copy[lang];
+  if (!slider.arrows)
+    return more ? (
+      <a
+        className="view-all-link"
+        href={more.href}
+        aria-label={`${t.viewAll}: ${more.title}`}
+      >
+        {t.viewAll}
+        <ChevronRight />
+      </a>
+    ) : null;
   const arrow = (direction: -1 | 1) => {
     const disabled = direction < 0 ? slider.start : slider.end;
     return (

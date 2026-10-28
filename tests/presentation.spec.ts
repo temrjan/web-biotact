@@ -140,6 +140,39 @@ async function stepperFrame(
   }
 }
 /**
+ * The plain "Все ›" link of a row header without arrows (DES-01, M6): the row
+ * title in its name, brand green, bold 17px, a 44px hit height and a chevron.
+ */
+async function plainAll(
+  link: Locator,
+  name: string,
+  text: string,
+  target: string,
+) {
+  await expect(link).toHaveCount(1);
+  await expect(link).toHaveAccessibleName(name);
+  await expect(link).toHaveText(text);
+  await expect(link).toHaveAttribute("href", target);
+  await expect(link).not.toHaveAttribute("aria-controls");
+  await expect(link).toHaveCSS("color", "rgb(12, 61, 43)");
+  await expect(link).toHaveCSS("font-size", "17px");
+  await expect(link).toHaveCSS("font-weight", "700");
+  await expect(link.locator("svg")).toHaveCount(1);
+  expect((await link.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+}
+/** Every `aria-controls` on the page names an element that exists. */
+async function ariaControlsResolve(page: Page) {
+  expect(
+    await page
+      .locator("[aria-controls]")
+      .evaluateAll((nodes) =>
+        nodes
+          .map((n) => n.getAttribute("aria-controls") || "")
+          .filter((id) => !document.getElementById(id)),
+      ),
+  ).toEqual([]);
+}
+/**
  * Offset of an arrow's drawn chevron (its rasterised ink, not its DOM box)
  * from the centre of the arrow button, in CSS pixels.
  */
@@ -2221,16 +2254,12 @@ test("Home rows scroll with one stepper-style row control and no scrollbar; cata
   await expect(next).toBeDisabled();
   await expect(next.locator("svg")).toHaveCSS("opacity", "0.4");
   await expect(row.locator('[data-product-id="4040"]')).toBeInViewport();
-  // The sale row has the same frame with arrows only; its single product
-  // does not overflow, so both arrows are at an end.
-  const sale = page.locator('[data-category="sale"] .slider-controls');
-  await stepperFrame(sale, ["Предыдущие товары", "Следующие товары"], basket);
-  await expect(sale.locator(".view-all")).toHaveCount(0);
-  for (const arrow of await sale.getByRole("button").all()) {
-    await expect(arrow).toHaveAttribute("aria-controls", "home-sale-row");
-    await expect(arrow).toBeDisabled();
-    await chevronCentred(arrow);
-  }
+  // The sale row has no catalogue target; its single product does not
+  // scroll, so its header shows nothing (V1).
+  const saleHead = page.locator('[data-category="sale"] .section-head');
+  await expect(saleHead.locator("h2")).toHaveText("Акции");
+  await expect(saleHead.locator(".slider-controls, a, button")).toHaveCount(0);
+  await ariaControlsResolve(page);
   await all.click();
   await expect(page).toHaveURL(/#catalogue\?category=301&page=1&lang=ru$/);
 
@@ -2256,24 +2285,105 @@ test("Home rows scroll with one stepper-style row control and no scrollbar; cata
   await page.goto("/#home?lang=uz");
   const compact = page.locator('[data-category="product"]');
   await expect(compact.locator("article")).toHaveCount(40);
-  const compactControl = compact.locator(".slider-controls");
-  await stepperFrame(
-    compactControl,
-    ["Oldingi mahsulotlar", "Hammasi: Nutriyentlar API", "Keyingi mahsulotlar"],
-    basket,
+  // Phones: no arrow frame; the category row keeps only "Hammasi ›" (M6).
+  await expect(compact.locator(".slider-controls, .slider-arrow")).toHaveCount(
+    0,
+  );
+  await plainAll(
+    compact.locator(".section-head .view-all-link"),
+    "Hammasi: Nutriyentlar API",
+    "Hammasi",
+    "/#catalogue?category=301&page=1&lang=uz",
   );
   await expect(
-    compactControl.getByRole("button", { name: "Keyingi mahsulotlar" }),
-  ).toBeEnabled();
-  await expect(
-    compactControl.getByRole("button", { name: "Oldingi mahsulotlar" }),
-  ).toBeDisabled();
-  await expect(
-    compactControl.getByRole("link", { name: "Hammasi: Nutriyentlar API" }),
-  ).toHaveText("Hammasi");
-  for (const arrow of await compactControl.getByRole("button").all())
-    await chevronCentred(arrow);
+    page.locator('[data-category="sale"] .section-head > :not(h2)'),
+  ).toHaveCount(0);
   await noOverflow(page);
+});
+
+test("row header: Все link while a row loads, fails or does not scroll; arrows only for a row that exists and scrolls", async ({
+  page,
+}) => {
+  await fixture(page);
+  // Наборы: held, then two products (no overflow at four per row);
+  // Техника: the row read fails.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/api/v1/products?*", async (route) => {
+    const category = new URL(route.request().url()).searchParams.get(
+      "category_id",
+    );
+    if (category === "302") {
+      await held;
+      await route.fulfill({
+        json: {
+          items: products
+            .slice(4, 6)
+            .map((p, i) => ({ ...p, id: 5001 + i, category_id: 302 })),
+          page: 1,
+          size: 100,
+          total: 2,
+          pages: 1,
+        },
+      });
+    } else if (category === "303")
+      await route.fulfill({ status: 503, json: {} });
+    else await route.fallback();
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/");
+  const sets = page.locator('[data-category="vitaminy-set"]'),
+    tech = page.locator('[data-category="tehnika"]');
+  await expect(page.locator('[data-category="product"] article')).toHaveCount(
+    40,
+  );
+  // Loading: the link, no arrows and no reference to the missing row.
+  await expect(sets.locator(".product-row")).toHaveCount(0);
+  await plainAll(
+    sets.locator(".section-head .view-all-link"),
+    "Все: Наборы",
+    "Все",
+    "/#catalogue?category=302&page=1&lang=ru",
+  );
+  await expect(sets.locator(".slider-controls, .slider-arrow")).toHaveCount(0);
+  // Error: the link stays the way to the category.
+  await expect(tech.getByRole("button", { name: /Повторить/ })).toBeVisible();
+  await plainAll(
+    tech.locator(".section-head .view-all-link"),
+    "Все: Техника",
+    "Все",
+    "/#catalogue?category=303&page=1&lang=ru",
+  );
+  await expect(tech.locator(".slider-controls, .slider-arrow")).toHaveCount(0);
+  await ariaControlsResolve(page);
+  // Ready without overflow: still the link only (V1).
+  release();
+  await expect(sets.locator(".product-row article")).toHaveCount(2);
+  expect(
+    await sets
+      .locator(".product-row")
+      .evaluate((n) => n.scrollWidth - n.clientWidth),
+  ).toBeLessThanOrEqual(1);
+  await plainAll(
+    sets.locator(".section-head .view-all-link"),
+    "Все: Наборы",
+    "Все",
+    "/#catalogue?category=302&page=1&lang=ru",
+  );
+  await expect(sets.locator(".slider-controls, .slider-arrow")).toHaveCount(0);
+  // A row that exists and scrolls has the frame, its arrows control the row.
+  const popular = page.locator('[data-category="product"] .section-head');
+  await expect(popular.locator(".slider-controls > *")).toHaveCount(3);
+  await expect(popular.locator(".view-all-link")).toHaveCount(0);
+  await ariaControlsResolve(page);
+  // Narrowing to a phone drops the frame; widening brings it back.
+  await page.setViewportSize({ width: 999, height: 1000 });
+  await expect(popular.locator(".slider-controls")).toHaveCount(0);
+  await expect(popular.locator(".view-all-link")).toHaveCount(1);
+  await page.setViewportSize({ width: 1000, height: 1000 });
+  await expect(popular.locator(".slider-controls > *")).toHaveCount(3);
+  await tech.locator(".view-all-link").click();
+  await expect(page).toHaveURL(/#catalogue\?category=303&page=1&lang=ru$/);
 });
 
 test("side menu shows no per-item loading or error text; the page keeps its own retry", async ({
@@ -2901,6 +3011,8 @@ test("product page follows the Mini App: description, composition, disclaimer no
   );
   // On a phone the slider is far down the page; the opened product starts at the top.
   await page.setViewportSize({ width: 390, height: 844 });
+  // Phones: no arrow frame; this row has no "Все" link either (M6).
+  await expect(recommended.locator(".section-head > :not(h2)")).toHaveCount(0);
   await card.locator("h3 a").scrollIntoViewIfNeeded();
   expect(await page.evaluate(() => scrollY)).toBeGreaterThan(1000);
   await card.locator("h3 a").click();

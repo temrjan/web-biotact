@@ -62,6 +62,46 @@ async function productAddFocus(page: Page) {
   await expect(frame).toHaveCSS("outline-style", "solid");
   await expect(frame).toHaveCSS("outline-offset", "3px");
 }
+/**
+ * Focused expanded phone search (SF1): no outline and no border change on the
+ * field or its rounded form; it looks exactly as with focus elsewhere in the
+ * form ("Найти"), and the caret shows the focus.
+ */
+async function searchFocus(page: Page) {
+  const form = page.locator(".topbar .search"),
+    input = form.locator("input");
+  const look = () =>
+    form.evaluate((n) => {
+      const s = getComputedStyle(n),
+        field = n.querySelector("input");
+      const i = field ? getComputedStyle(field) : null;
+      return {
+        border: [s.borderTop, s.borderRight, s.borderBottom, s.borderLeft],
+        outline: s.outlineStyle,
+        shadow: s.boxShadow,
+        field: [i?.outlineStyle, i?.borderTopStyle, i?.boxShadow],
+      };
+    });
+  await expect(input).toBeFocused();
+  const focused = await look();
+  expect(focused.field[0]).toBe("none");
+  expect(focused.border[0]).toBe("1px solid rgb(196, 196, 196)");
+  await form.getByRole("button").focus();
+  expect(await look()).toEqual(focused);
+  await input.focus();
+}
+/** Choose a size with the product page size buttons (SZ1). */
+async function pickSize(page: Page, size: string) {
+  const button = page
+    .locator(".product-summary .size-chips")
+    .getByRole("button", { name: size, exact: true });
+  await button.click();
+  await expect(button).toHaveAttribute("aria-pressed", "true");
+}
+async function noSizeChosen(group: Locator) {
+  for (const button of await group.getByRole("button").all())
+    await expect(button).toHaveAttribute("aria-pressed", "false");
+}
 /** The open basket survived a language-only history step and has no language buttons. */
 async function basketStaysOpen(page: Page) {
   await expect(page.locator("dialog.basket-panel[open]")).toHaveCount(1);
@@ -81,32 +121,52 @@ async function languageStep(page: Page, lang: "ru" | "uz") {
   await basketStaysOpen(page);
 }
 
+/** Border, face, radius, clipping and outer height of a stepper-style frame. */
+function frameLook(frame: Locator) {
+  return frame.evaluate((n) => {
+    const s = getComputedStyle(n);
+    return {
+      border: [s.borderTop, s.borderBottom, s.borderLeft, s.borderRight],
+      background: s.backgroundColor,
+      radius: s.borderRadius,
+      overflow: s.overflow,
+      height: n.getBoundingClientRect().height,
+    };
+  });
+}
+type FrameLook = Awaited<ReturnType<typeof frameLook>>;
 /**
- * The row control copies the basket stepper frame (`.basket-quantity`):
- * 1px #c4c4c4 border, #ebebeb face, 10px radius and 44px rows; arrow-only
- * rows have two 44px cells.
+ * The live basket stepper (`.basket-quantity`) of the open basket, as the
+ * reference for the row control frame; needs at least one basket line. The
+ * basket closes again afterwards.
  */
-async function stepperFrame(control: Locator, cells: string[]) {
-  expect(
-    await control.evaluate((n) => {
-      const s = getComputedStyle(n);
-      return [s.borderTop, s.borderBottom, s.borderLeft, s.borderRight].concat(
-        s.backgroundColor,
-        s.borderRadius,
-        s.overflow,
-        String(n.getBoundingClientRect().height),
-      );
-    }),
-  ).toEqual([
-    "1px solid rgb(196, 196, 196)",
-    "1px solid rgb(196, 196, 196)",
-    "1px solid rgb(196, 196, 196)",
-    "1px solid rgb(196, 196, 196)",
-    "rgb(235, 235, 235)",
-    "10px",
-    "hidden",
-    "46",
-  ]);
+async function basketStepper(page: Page) {
+  await page.locator(".basket-button").click();
+  const stepper = page
+    .locator("dialog.basket-panel[open] .basket-quantity")
+    .first();
+  await expect(stepper).toBeVisible();
+  const frame = await frameLook(stepper);
+  const cell = (await stepper.getByRole("button").first().boundingBox())
+    ?.height;
+  await page.keyboard.press("Escape");
+  await dialogCount(page, 0);
+  // A meaningful reference, not two empty measurements that happen to agree.
+  expect(frame.border[0]).toMatch(/^1px solid rgb/);
+  expect(cell).toBeGreaterThanOrEqual(44);
+  return { frame, cell };
+}
+/**
+ * The row control copies the basket stepper frame (`.basket-quantity`, measured
+ * live in the same run): same border, face, radius, clipping, outer height and
+ * row height; arrow-only rows have two cells.
+ */
+async function stepperFrame(
+  control: Locator,
+  cells: string[],
+  basket: { frame: FrameLook; cell: number | undefined },
+) {
+  expect(await frameLook(control)).toEqual(basket.frame);
   const children = control.locator(":scope > *");
   expect(
     await children.evaluateAll((nodes) =>
@@ -114,10 +174,43 @@ async function stepperFrame(control: Locator, cells: string[]) {
     ),
   ).toEqual(cells);
   for (const child of await children.all()) {
-    expect((await child.boundingBox())?.height).toBe(44);
+    expect((await child.boundingBox())?.height).toBe(basket.cell);
     await expect(child).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     await expect(child).toHaveCSS("color", "rgb(46, 37, 33)");
   }
+}
+/**
+ * The plain "Все ›" link of a row header without arrows (DES-01, M6): the row
+ * title in its name, brand green, bold 17px, a 44px hit height and a chevron.
+ */
+async function plainAll(
+  link: Locator,
+  name: string,
+  text: string,
+  target: string,
+) {
+  await expect(link).toHaveCount(1);
+  await expect(link).toHaveAccessibleName(name);
+  await expect(link).toHaveText(text);
+  await expect(link).toHaveAttribute("href", target);
+  await expect(link).not.toHaveAttribute("aria-controls");
+  await expect(link).toHaveCSS("color", "rgb(12, 61, 43)");
+  await expect(link).toHaveCSS("font-size", "17px");
+  await expect(link).toHaveCSS("font-weight", "700");
+  await expect(link.locator("svg")).toHaveCount(1);
+  expect((await link.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+}
+/** Every `aria-controls` on the page names an element that exists. */
+async function ariaControlsResolve(page: Page) {
+  expect(
+    await page
+      .locator("[aria-controls]")
+      .evaluateAll((nodes) =>
+        nodes
+          .map((n) => n.getAttribute("aria-controls") || "")
+          .filter((id) => !document.getElementById(id)),
+      ),
+  ).toEqual([]);
 }
 /**
  * Offset of an arrow's drawn chevron (its rasterised ink, not its DOM box)
@@ -274,18 +367,14 @@ test("Product detail requires an explicit available size, keeps canonical varian
   );
   await page.goto("/#product?id=4001");
   const detail = page.locator(".product-summary"),
-    choice = detail.getByRole("combobox");
-  await expect(choice).toHaveValue("");
-  await expect(choice.locator("option")).toHaveText([
-    "Выберите размер",
-    "L",
-    "XL",
-  ]);
+    choice = detail.getByRole("group", { name: "Размер: Synthetic Match 01" });
+  await expect(choice.getByRole("button")).toHaveText(["L", "XL"]);
+  await noSizeChosen(choice);
   await expect(detail.locator(".add")).toBeDisabled();
-  await choice.selectOption("L");
+  await pickSize(page, "L");
   await detail.locator(".add").click();
   await detail.locator("[data-more]").click();
-  await choice.selectOption("XL");
+  await pickSize(page, "XL");
   await expect(detail.locator(".add")).toBeEnabled();
   await detail.locator(".add").click();
   await page.locator(".basket-button").click();
@@ -302,12 +391,12 @@ test("Product detail requires an explicit available size, keeps canonical varian
   await expect(page.locator(firstCard + " output")).toHaveText("2");
   await expect(page.locator(firstCard + " .size-summary")).toContainText("L");
   await page.locator(firstCard + " h3 a").click();
-  await expect(choice).toHaveValue("");
+  await noSizeChosen(choice);
   await expect(detail.locator(".add")).toBeDisabled();
-  await choice.selectOption("XL");
+  await pickSize(page, "XL");
   await expect(detail.locator("output")).toHaveText("1");
   await detail.getByRole("button", { name: /Уменьшить количество/ }).click();
-  await choice.selectOption("L");
+  await pickSize(page, "L");
   await expect(detail.locator("output")).toHaveText("2");
   for (const id of [4002, 4003, 4005]) {
     await page.evaluate((id) => {
@@ -318,12 +407,88 @@ test("Product detail requires an explicit available size, keeps canonical varian
       String(id),
     );
     await expect(detail.locator(".add")).toBeDisabled();
-    if (id === 4005) {
-      await expect(choice).toHaveValue("");
-      await expect(choice.locator("option")).toHaveCount(1);
-    }
+    // A size product without any available size has no size buttons.
+    if (id === 4005) await expect(detail.locator(".size-chips")).toHaveCount(0);
     await expect(page.locator(".basket-badge")).toHaveText("2");
   }
+});
+
+test("product page size buttons: neutral face, hover and selected grey, green ring only for the keyboard, chosen size goes into the basket", async ({
+  page,
+}) => {
+  await fixture(page);
+  for (const [width, lang, name] of [
+    [1440, "ru", "Размер: Synthetic Match 01"],
+    [390, "uz", "Oʻlcham: Synthetic Match 01"],
+    [320, "ru", "Размер: Synthetic Match 01"],
+  ] as const) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`/#product?id=4001&lang=${lang}`);
+    const detail = page.locator(".product-summary"),
+      group = detail.getByRole("group", { name }),
+      add = detail.locator(".detail-purchase .add");
+    // Buttons instead of the dropdown; no "available sizes" line above.
+    await expect(detail.locator("select")).toHaveCount(0);
+    await expect(
+      detail.getByText(/Доступные размеры|Mavjud oʻlchamlar/),
+    ).toHaveCount(0);
+    await expect(detail.locator(".size-choice > span")).toHaveText(
+      lang === "ru" ? "Размер" : "Oʻlcham",
+    );
+    const l = group.getByRole("button", { name: "L", exact: true }),
+      xl = group.getByRole("button", { name: "XL", exact: true });
+    await expect(group.getByRole("button")).toHaveText(["L", "XL"]);
+    await noSizeChosen(group);
+    for (const button of [l, xl]) {
+      expect((await button.boundingBox())?.height).toBe(44);
+      await expect(button).toHaveCSS("background-color", "rgb(235, 235, 235)");
+      await expect(button).toHaveCSS("border", "1px solid rgb(196, 196, 196)");
+      await expect(button).toHaveCSS("border-radius", "10px");
+      await expect(button).toHaveCSS("box-shadow", "none");
+      await expect(button).toHaveCSS("color", "rgb(46, 37, 33)");
+      await expect(button).toHaveCSS("font-weight", "400");
+    }
+    // Pale green Add until a size is chosen (N1 = B).
+    await expect(add).toBeDisabled();
+    await expect(add).toHaveCSS("opacity", "0.6");
+    // Hover: our hover grey.
+    await l.hover();
+    await expect(l).toHaveCSS("background-color", "rgb(227, 227, 227)");
+    // Mouse choice: selected grey and bold, no green frame.
+    await xl.click();
+    await expect(xl).toHaveAttribute("aria-pressed", "true");
+    await expect(l).toHaveAttribute("aria-pressed", "false");
+    await expect(xl).toBeFocused();
+    expect(await xl.evaluate((n) => n.matches(":focus-visible"))).toBe(false);
+    await expect(xl).toHaveCSS("outline-style", "none");
+    await expect(xl).toHaveCSS("background-color", "rgb(221, 221, 221)");
+    await expect(xl).toHaveCSS("font-weight", "700");
+    await expect(xl).toHaveCSS("border", "1px solid rgb(196, 196, 196)");
+    await expect(l).toHaveCSS("font-weight", "400");
+    await expect(add).toBeEnabled();
+    await expect(add).toHaveCSS("opacity", "1");
+    // Keyboard: the green ring appears on Tab; Space chooses the size.
+    await page.keyboard.press("Shift+Tab");
+    await expect(l).toBeFocused();
+    await greenFocus(l);
+    await page.keyboard.press("Space");
+    await expect(l).toHaveAttribute("aria-pressed", "true");
+    await expect(xl).toHaveAttribute("aria-pressed", "false");
+    await expect(l).toHaveCSS("background-color", "rgb(221, 221, 221)");
+    await noOverflow(page);
+    await page.evaluate(() => localStorage.clear());
+  }
+  // The chosen size goes into the basket line, as with the dropdown.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/#product?id=4001&lang=ru");
+  await pickSize(page, "XL");
+  await page.locator(".product-summary .add").click();
+  await expect(page.locator(".product-summary output")).toHaveText("1");
+  await page.locator(".basket-button").click();
+  await expect(page.locator(".basket-row")).toHaveCount(1);
+  await expect(
+    page.locator('[data-basket-product="4001"][data-basket-size="XL"] output'),
+  ).toHaveText("1");
 });
 
 test("brand-green 2px keyboard focus remains visible on detail, fields and modal controls at compact sizes and 125% text", async ({
@@ -343,15 +508,16 @@ test("brand-green 2px keyboard focus remains visible on detail, fields and modal
       await greenFocus(page.locator(icon));
     await page.locator(".top-search").focus();
     await page.keyboard.press("Enter");
-    await greenFocus(page.locator(".search input"));
+    await searchFocus(page);
+    // "Найти" and × keep the site's keyboard ring.
+    await greenFocus(page.locator(".topbar .search button"));
     await greenFocus(page.locator(".search-close"));
     await page.keyboard.press("Escape");
     await expect(page.locator(".top-search")).toBeFocused();
     await greenFocus(page.locator('.gallery button[aria-pressed="true"]'));
-    const detail = page.locator(".product-summary"),
-      choice = detail.getByRole("combobox");
-    await greenFocus(choice);
-    await choice.selectOption("L");
+    const detail = page.locator(".product-summary");
+    await greenFocus(detail.locator(".size-chips button").first());
+    await pickSize(page, "L");
     await productAddFocus(page);
     await page.keyboard.press("Enter");
     await greenFocus(detail.locator("[data-more]"));
@@ -491,7 +657,7 @@ test("product page first Add is brand green, pale green while disabled; pressed 
       await expect(disabled).toHaveCSS("background-color", green);
       await expect(disabled).toHaveCSS("opacity", "0.6");
     }
-    await page.locator(".detail-purchase select").selectOption("L");
+    await pickSize(page, "L");
     await expect(page.locator(".detail-purchase .add")).toBeEnabled();
     await expect(page.locator(".detail-purchase .add")).toHaveCSS(
       "opacity",
@@ -899,7 +1065,7 @@ test("compact size popup preserves Home/Catalogue card height, keyboard focus an
   await page.evaluate(() => (window.location.hash = "product?id=4001&lang=uz"));
   await dialogCount(page, 0);
   await expect(page.locator("#content")).toBeFocused();
-  await page.locator(".product-summary select").selectOption("L");
+  await pickSize(page, "L");
   await expect(page.locator(".product-summary output")).toHaveText("1");
   const sized = source[0];
   if (!sized) throw new Error("Missing mutable sized fixture");
@@ -1741,7 +1907,7 @@ test("remembered exact variants survive reload, a new page and optional unavaila
   await expect(sale.locator("output")).toHaveText("2");
   await expect(page.locator(".basket-badge")).toHaveText("103");
   await page.locator(firstCard + " h3 a").click();
-  await page.locator(".product-summary select").selectOption("L");
+  await pickSize(page, "L");
   await expect(page.locator(".product-summary [data-more]")).toBeDisabled();
   await page.locator(".basket-button").click();
   await expect(
@@ -2128,14 +2294,17 @@ test("Home rows scroll with one stepper-style row control and no scrollbar; cata
   expect(
     await row.evaluate((n) => (n as HTMLElement).offsetHeight - n.clientHeight),
   ).toBe(0);
-  // One control instead of two arrows and a pill: [‹] Все [›] in the basket stepper frame.
+  // One control instead of two arrows and a pill: [‹] Все [›] in the frame of
+  // the live basket stepper (one basket line makes the basket show it).
+  await row.locator(ordinaryCard).locator(".add").click();
+  const basket = await basketStepper(page);
   const control = popular.locator(".section-head .slider-controls");
   await expect(control).toHaveCount(1);
-  await stepperFrame(control, [
-    "Предыдущие товары",
-    "Все: Нутриенты",
-    "Следующие товары",
-  ]);
+  await stepperFrame(
+    control,
+    ["Предыдущие товары", "Все: Нутриенты", "Следующие товары"],
+    basket,
+  );
   const previous = control.getByRole("button", { name: "Предыдущие товары" });
   const next = control.getByRole("button", { name: "Следующие товары" });
   const all = control.getByRole("link", { name: "Все: Нутриенты" });
@@ -2198,16 +2367,12 @@ test("Home rows scroll with one stepper-style row control and no scrollbar; cata
   await expect(next).toBeDisabled();
   await expect(next.locator("svg")).toHaveCSS("opacity", "0.4");
   await expect(row.locator('[data-product-id="4040"]')).toBeInViewport();
-  // The sale row has the same frame with arrows only; its single product
-  // does not overflow, so both arrows are at an end.
-  const sale = page.locator('[data-category="sale"] .slider-controls');
-  await stepperFrame(sale, ["Предыдущие товары", "Следующие товары"]);
-  await expect(sale.locator(".view-all")).toHaveCount(0);
-  for (const arrow of await sale.getByRole("button").all()) {
-    await expect(arrow).toHaveAttribute("aria-controls", "home-sale-row");
-    await expect(arrow).toBeDisabled();
-    await chevronCentred(arrow);
-  }
+  // The sale row has no catalogue target; its single product does not
+  // scroll, so its header shows nothing (V1).
+  const saleHead = page.locator('[data-category="sale"] .section-head');
+  await expect(saleHead.locator("h2")).toHaveText("Акции");
+  await expect(saleHead.locator(".slider-controls, a, button")).toHaveCount(0);
+  await ariaControlsResolve(page);
   await all.click();
   await expect(page).toHaveURL(/#catalogue\?category=301&page=1&lang=ru$/);
 
@@ -2233,24 +2398,286 @@ test("Home rows scroll with one stepper-style row control and no scrollbar; cata
   await page.goto("/#home?lang=uz");
   const compact = page.locator('[data-category="product"]');
   await expect(compact.locator("article")).toHaveCount(40);
-  const compactControl = compact.locator(".slider-controls");
-  await stepperFrame(compactControl, [
-    "Oldingi mahsulotlar",
+  // Phones: no arrow frame; the category row keeps only "Hammasi ›" (M6).
+  await expect(compact.locator(".slider-controls, .slider-arrow")).toHaveCount(
+    0,
+  );
+  await plainAll(
+    compact.locator(".section-head .view-all-link"),
     "Hammasi: Nutriyentlar API",
-    "Keyingi mahsulotlar",
-  ]);
+    "Hammasi",
+    "/#catalogue?category=301&page=1&lang=uz",
+  );
   await expect(
-    compactControl.getByRole("button", { name: "Keyingi mahsulotlar" }),
-  ).toBeEnabled();
-  await expect(
-    compactControl.getByRole("button", { name: "Oldingi mahsulotlar" }),
-  ).toBeDisabled();
-  await expect(
-    compactControl.getByRole("link", { name: "Hammasi: Nutriyentlar API" }),
-  ).toHaveText("Hammasi");
-  for (const arrow of await compactControl.getByRole("button").all())
-    await chevronCentred(arrow);
+    page.locator('[data-category="sale"] .section-head > :not(h2)'),
+  ).toHaveCount(0);
   await noOverflow(page);
+});
+
+test("row header: Все link while a row loads, fails or does not scroll; arrows only for a row that exists and scrolls", async ({
+  page,
+}) => {
+  await fixture(page);
+  // Наборы: held, then two products (no overflow at four per row);
+  // Техника: the row read fails.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/api/v1/products?*", async (route) => {
+    const category = new URL(route.request().url()).searchParams.get(
+      "category_id",
+    );
+    if (category === "302") {
+      await held;
+      await route.fulfill({
+        json: {
+          items: products
+            .slice(4, 6)
+            .map((p, i) => ({ ...p, id: 5001 + i, category_id: 302 })),
+          page: 1,
+          size: 100,
+          total: 2,
+          pages: 1,
+        },
+      });
+    } else if (category === "303")
+      await route.fulfill({ status: 503, json: {} });
+    else await route.fallback();
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/");
+  const sets = page.locator('[data-category="vitaminy-set"]'),
+    tech = page.locator('[data-category="tehnika"]');
+  await expect(page.locator('[data-category="product"] article')).toHaveCount(
+    40,
+  );
+  // Loading: the link, no arrows and no reference to the missing row.
+  await expect(sets.locator(".product-row")).toHaveCount(0);
+  await plainAll(
+    sets.locator(".section-head .view-all-link"),
+    "Все: Наборы",
+    "Все",
+    "/#catalogue?category=302&page=1&lang=ru",
+  );
+  await expect(sets.locator(".slider-controls, .slider-arrow")).toHaveCount(0);
+  // Error: the link stays the way to the category.
+  await expect(tech.getByRole("button", { name: /Повторить/ })).toBeVisible();
+  await plainAll(
+    tech.locator(".section-head .view-all-link"),
+    "Все: Техника",
+    "Все",
+    "/#catalogue?category=303&page=1&lang=ru",
+  );
+  await expect(tech.locator(".slider-controls, .slider-arrow")).toHaveCount(0);
+  await ariaControlsResolve(page);
+  // Ready without overflow: still the link only (V1).
+  release();
+  await expect(sets.locator(".product-row article")).toHaveCount(2);
+  expect(
+    await sets
+      .locator(".product-row")
+      .evaluate((n) => n.scrollWidth - n.clientWidth),
+  ).toBeLessThanOrEqual(1);
+  await plainAll(
+    sets.locator(".section-head .view-all-link"),
+    "Все: Наборы",
+    "Все",
+    "/#catalogue?category=302&page=1&lang=ru",
+  );
+  await expect(sets.locator(".slider-controls, .slider-arrow")).toHaveCount(0);
+  // A row that exists and scrolls has the frame, its arrows control the row.
+  const popular = page.locator('[data-category="product"] .section-head');
+  await expect(popular.locator(".slider-controls > *")).toHaveCount(3);
+  await expect(popular.locator(".view-all-link")).toHaveCount(0);
+  await ariaControlsResolve(page);
+  // Narrowing to a phone drops the frame; widening brings it back.
+  await page.setViewportSize({ width: 999, height: 1000 });
+  await expect(popular.locator(".slider-controls")).toHaveCount(0);
+  await expect(popular.locator(".view-all-link")).toHaveCount(1);
+  await page.setViewportSize({ width: 1000, height: 1000 });
+  await expect(popular.locator(".slider-controls > *")).toHaveCount(3);
+  await tech.locator(".view-all-link").click();
+  await expect(page).toHaveURL(/#catalogue\?category=303&page=1&lang=ru$/);
+});
+
+test("phone home rows shift once by a small random distance when they come into view and stay; not under reduced motion, after a touch or a scroll, or on desktop", async ({
+  page,
+}) => {
+  await fixture(page);
+  // Pin Math.random per page view, so both ends of the random ranges are proven.
+  await page.addInitScript(() => {
+    const pinned = sessionStorage.getItem("pinned-random");
+    if (pinned !== null) Math.random = () => Number(pinned);
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const row = page.locator('[data-category="product"] .product-row'),
+    sale = page.locator('[data-category="sale"] .product-row');
+  const left = () => row.evaluate((n) => n.scrollLeft);
+  /** Open Home in a new page view, optionally pinning Math.random. */
+  async function open(random: number | null) {
+    await page.goto("/#catalogue?page=1");
+    await page.evaluate((random) => {
+      if (random === null) sessionStorage.removeItem("pinned-random");
+      else sessionStorage.setItem("pinned-random", String(random));
+    }, random);
+    await page.goto("/");
+    await page.reload();
+    await expect(row.locator("article")).toHaveCount(40);
+  }
+  /** Wait until the row has moved and stopped; returns its offset. */
+  async function settled() {
+    await expect.poll(left, { timeout: 3000 }).toBeGreaterThan(0);
+    let previous = -1,
+      current = await left();
+    while (current !== previous) {
+      await page.waitForTimeout(150);
+      previous = current;
+      current = await left();
+    }
+    return current;
+  }
+  const cardWidth = () =>
+    row
+      .locator("article")
+      .first()
+      .evaluate((n) => (n as HTMLElement).offsetWidth);
+  for (const random of [0, 0.999]) {
+    await open(random);
+    // Not before the row comes into view.
+    await page.waitForTimeout(800);
+    expect(await left()).toBe(0);
+    await row.scrollIntoViewIfNeeded();
+    const shift = await settled(),
+      card = await cardWidth();
+    // Below one card width: part of the first card stays visible.
+    expect(shift).toBeGreaterThanOrEqual(Math.floor(card * 0.3));
+    expect(shift).toBeLessThanOrEqual(Math.ceil(card * 0.55));
+    await expect(row.locator("article").first()).toBeInViewport({
+      ratio: 0.4,
+    });
+    // It stays: no return, no snapping back, not replayed on the next visit.
+    await expect(row).toHaveCSS("scroll-snap-type", "none");
+    await page.waitForTimeout(2000);
+    expect(await left()).toBe(shift);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(300);
+    await row.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(1200);
+    expect(await left()).toBe(shift);
+  }
+  // A row whose cards fit does not move (the sale row has one product).
+  await sale.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(1200);
+  expect(await sale.evaluate((n) => n.scrollLeft)).toBe(0);
+  // The visitor touched the row before the hint: it does not move.
+  await open(null);
+  await row.evaluate((n) => {
+    n.scrollIntoView({ block: "center" });
+    n.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  });
+  await page.waitForTimeout(1500);
+  expect(await left()).toBe(0);
+  // The visitor scrolled the row before the hint: it stays where they left it.
+  await open(null);
+  await row.evaluate((n) => {
+    n.scrollIntoView({ block: "center" });
+    n.scrollBy({ left: n.clientWidth });
+  });
+  const own = await left();
+  expect(own).toBeGreaterThan(0);
+  await page.waitForTimeout(1500);
+  expect(await left()).toBe(own);
+  await expect(row).not.toHaveAttribute("data-hint");
+  // Reduced motion: no shift at all.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await open(null);
+  await row.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(1500);
+  expect(await left()).toBe(0);
+  // Desktop: no shift; the arrows scroll the row.
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await open(null);
+  await row.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(1500);
+  expect(await left()).toBe(0);
+  await expect(row).toHaveCSS("scroll-snap-type", "x mandatory");
+});
+
+test("phone row hint plays once per site visit: back on Home by link, menu or Back without a reload the row stays at the start; a reload is a new visit", async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const row = page.locator('[data-category="product"] .product-row'),
+    cards = row.locator("article");
+  const left = () => row.evaluate((n) => n.scrollLeft);
+  /** Mark the document, so a later check proves no reload happened in between. */
+  const mark = () =>
+    page.evaluate(() => Object.assign(window, { sameVisit: true }));
+  async function shifts() {
+    await expect(cards).toHaveCount(40);
+    await row.scrollIntoViewIfNeeded();
+    await expect.poll(left, { timeout: 3000 }).toBeGreaterThan(0);
+    await expect(row).toHaveAttribute("data-hint", "");
+  }
+  /** Back on Home in the same document: the row starts at 0 and stays there past the longest hint delay, snapping as usual. */
+  async function stays() {
+    await expect(page).toHaveURL(/#home\?lang=ru$/);
+    expect(await page.evaluate(() => "sameVisit" in window)).toBe(true);
+    await expect(cards).toHaveCount(40);
+    await row.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(1500);
+    expect(await left()).toBe(0);
+    await expect(row).not.toHaveAttribute("data-hint");
+    await expect(row).toHaveCSS("scroll-snap-type", "x mandatory");
+  }
+  async function toCatalogue() {
+    await page.locator('[data-category="product"] .view-all-link').click();
+    await expect(page).toHaveURL(/#catalogue\?/);
+    await expect(row).toHaveCount(0);
+  }
+  // First view: the row shifts.
+  await page.goto("/#home?lang=ru");
+  await mark();
+  await shifts();
+  // Catalogue by the row's "Все" link, then Back.
+  await toCatalogue();
+  await page.goBack();
+  await stays();
+  // Catalogue again, then Home by the logo in the phone menu.
+  await toCatalogue();
+  await page.locator(".menu-toggle").click();
+  await page.locator(".drawer .brand").click();
+  await stays();
+  // A reload is a new visit: the row shifts again.
+  await page.reload();
+  expect(await page.evaluate(() => "sameVisit" in window)).toBe(false);
+  await shifts();
+  // A row the visitor touched before the hint keeps its chance used up too.
+  await page.reload();
+  await mark();
+  await expect(cards).toHaveCount(40);
+  await row.evaluate((n) => {
+    n.scrollIntoView({ block: "center" });
+    n.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  });
+  await page.waitForTimeout(1500);
+  expect(await left()).toBe(0);
+  await toCatalogue();
+  await page.goBack();
+  await stays();
+  // A row that never came into view before leaving still gets its one shift.
+  await page.reload();
+  await mark();
+  await expect(cards).toHaveCount(40);
+  await page.waitForTimeout(800);
+  expect(await left()).toBe(0);
+  await page.goto("/#catalogue?page=1&lang=ru");
+  await expect(row).toHaveCount(0);
+  await page.goBack();
+  await expect(page).toHaveURL(/#home\?lang=ru$/);
+  expect(await page.evaluate(() => "sameVisit" in window)).toBe(true);
+  await shifts();
 });
 
 test("side menu shows no per-item loading or error text; the page keeps its own retry", async ({
@@ -2425,10 +2852,17 @@ test("basket sits in the side menu on desktop and in the phone top bar that retu
   await page.mouse.wheel(0, 1600);
   await page.waitForFunction(() => scrollY > 1000);
   await headerShown(page, false);
+  // Bring the card into view first: a scroll made by the click itself would
+  // be a downward scroll after the visitor's input and hide the bar again.
+  const added = page.locator('.product-grid [data-product-id="4019"] .add');
+  await added.evaluate((n) => n.scrollIntoView({ block: "center" }));
   await page.mouse.wheel(0, -200);
   await headerShown(page, true);
   await expect(page.locator(".topbar")).toHaveCSS("position", "sticky");
-  await page.locator('.product-grid [data-product-id="4019"] .add').click();
+  const before = await page.evaluate(() => scrollY);
+  await added.click();
+  expect(await page.evaluate(() => scrollY)).toBe(before);
+  await headerShown(page, true);
   await expect(topBasket.locator(".basket-badge")).toHaveText("2");
   await expect(topBasket).toBeInViewport();
   // The returned sticky bar stays above cards and their sale badges.
@@ -2526,10 +2960,12 @@ test("phone header is one row of icons with in-place search; Account and RU/UZ m
       "aria-expanded",
       "false",
     );
-    await expect(page.locator(".top-search")).toHaveAttribute(
+    // The form exists only while expanded, when this icon is not rendered,
+    // so the collapsed icon names no missing element (OPT-02).
+    await expect(page.locator(".top-search")).not.toHaveAttribute(
       "aria-controls",
-      "top-search",
     );
+    await ariaControlsResolve(page);
     await expect(bar.locator(".search, .languages, a")).toHaveCount(0);
     await expect(bar).not.toContainText("ИИ · помощь");
     await page.locator(".top-search").hover();
@@ -2548,6 +2984,8 @@ test("phone header is one row of icons with in-place search; Account and RU/UZ m
   await expect(
     form.getByRole("textbox", { name: "Поиск товаров" }),
   ).toBeFocused();
+  // Mouse opening: no outline or border change on the focused field (SF1).
+  await searchFocus(page);
   await expect(
     page.locator(".topbar .menu-toggle, .topbar .top-utilities"),
   ).toHaveCount(0);
@@ -2691,7 +3129,14 @@ test("phone header hides on downward scroll and returns on upward scroll; never 
   await scrollPage(page, 600);
   await expect(bar).toHaveCSS("transform", "none");
   expect((await bar.boundingBox())?.y).toBe(0);
+  // Focus leaving the header after that scroll does not slide it away by
+  // itself (OPT-01); the next downward scroll does.
   await page.locator("#content").focus();
+  await headerShown(page, true);
+  await page.waitForTimeout(400);
+  expect((await bar.boundingBox())?.y).toBe(0);
+  await page.mouse.wheel(0, 300);
+  await headerShown(page, false);
 
   // Each surface and the expanded search keep the header on screen.
   for (const open of [
@@ -2852,11 +3297,6 @@ test("product page follows the Mini App: description, composition, disclaimer no
   const previous = recommended.getByRole("button", {
     name: "Предыдущие товары",
   });
-  // Same stepper frame as the home rows, arrows only.
-  await stepperFrame(recommended.locator(".slider-controls"), [
-    "Предыдущие товары",
-    "Следующие товары",
-  ]);
   await expect(recommended.locator(".view-all")).toHaveCount(0);
   for (const arrow of [previous, next]) {
     await expect(arrow).toHaveAttribute(
@@ -2875,8 +3315,16 @@ test("product page follows the Mini App: description, composition, disclaimer no
   await expect(card.locator(".price strong")).toContainText(/112\s?233,44 UZS/);
   await card.locator(".add").click();
   await expect(page.locator(".basket-badge")).toHaveText("1");
+  // Same frame as the live basket stepper and the home rows, arrows only.
+  await stepperFrame(
+    recommended.locator(".slider-controls"),
+    ["Предыдущие товары", "Следующие товары"],
+    await basketStepper(page),
+  );
   // On a phone the slider is far down the page; the opened product starts at the top.
   await page.setViewportSize({ width: 390, height: 844 });
+  // Phones: no arrow frame; this row has no "Все" link either (M6).
+  await expect(recommended.locator(".section-head > :not(h2)")).toHaveCount(0);
   await card.locator("h3 a").scrollIntoViewIfNeeded();
   expect(await page.evaluate(() => scrollY)).toBeGreaterThan(1000);
   await card.locator("h3 a").click();

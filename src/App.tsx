@@ -2,6 +2,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
@@ -64,7 +65,6 @@ const copy = {
     inStock: "В наличии",
     outOfStock: "Нет в наличии",
     noPurchase: "Недоступен для покупки",
-    sizes: "Доступные размеры",
     description: "Описание",
     advantages: "Преимущества",
     info: "Дополнительная информация",
@@ -117,7 +117,6 @@ const copy = {
     inStock: "Mavjud",
     outOfStock: "Mavjud emas",
     noPurchase: "Xarid qilish mumkin emas",
-    sizes: "Mavjud oʻlchamlar",
     description: "Tavsif",
     advantages: "Afzalliklari",
     info: "Qoʻshimcha maʼlumot",
@@ -399,10 +398,113 @@ function Recovery({ lang, title }: { lang: api.Language; title: string }) {
     </div>
   );
 }
-/** Scroll state of one horizontal product row, for its header arrows. */
-function useSlider() {
+/** The site's one layout breakpoint: phones and tablets below 1000px. */
+const COMPACT_QUERY = "(max-width: 999px)";
+function subscribeCompact(change: () => void) {
+  const media = window.matchMedia(COMPACT_QUERY);
+  media.addEventListener("change", change);
+  return () => media.removeEventListener("change", change);
+}
+function useCompactWidth() {
+  return useSyncExternalStore(
+    subscribeCompact,
+    () => window.matchMedia(COMPACT_QUERY).matches,
+  );
+}
+/** Phone row hint (M6): random delay after the row comes into view, in ms. */
+const ROW_HINT_DELAY = [200, 600] as const;
+/** Phone row hint distance as a share of one card, so the first card stays partly visible. */
+const ROW_HINT_SHARE = [0.3, 0.55] as const;
+const between = ([low, high]: readonly [number, number]) =>
+  low + Math.random() * (high - low);
+/**
+ * Home rows (by element id) whose hint chance is used up in this document
+ * load: they shifted, or the visitor touched them first. Module state, so it
+ * outlives Home unmounting on a view change and resets on a reload.
+ */
+const hintedRows = new Set<string>();
+/**
+ * Phones (M6): a row whose cards do not fit, when it first comes into view,
+ * waits a small random delay and smoothly scrolls a small random distance, and
+ * stays there. Once per row per site visit (document load, OPT-01): a row
+ * that shifted or that the visitor touched, focused or scrolled stays at its
+ * start when Home is shown again without a reload. Not under reduced motion.
+ * Snapping is off for a shifted row (re-enabling it would snap the row
+ * straight back).
+ */
+function useRowHint(row: HTMLDivElement | null, enabled: boolean) {
+  useEffect(() => {
+    if (!row || !enabled) return;
+    const key = row.id;
+    const done = () => hintedRows.has(key);
+    if (done()) return;
+    let timer = 0;
+    const touched = () => {
+      hintedRows.add(key);
+      window.clearTimeout(timer);
+    };
+    const inputs = [
+      "pointerdown",
+      "touchstart",
+      "wheel",
+      "keydown",
+      "focusin",
+      "scroll",
+    ];
+    for (const type of inputs)
+      row.addEventListener(type, touched, { passive: true });
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (done()) observer.disconnect();
+        if (
+          done() ||
+          !entries.some((entry) => entry.isIntersecting) ||
+          !window.matchMedia(COMPACT_QUERY).matches
+        )
+          return;
+        observer.disconnect();
+        timer = window.setTimeout(() => {
+          const card = row.firstElementChild,
+            max = row.scrollWidth - row.clientWidth;
+          if (
+            done() ||
+            row.scrollLeft > 1 ||
+            max <= 1 ||
+            !(card instanceof HTMLElement) ||
+            !window.matchMedia(COMPACT_QUERY).matches ||
+            window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          )
+            return;
+          hintedRows.add(key);
+          row.dataset.hint = "";
+          row.scrollTo({
+            left: Math.min(
+              max,
+              Math.round(card.offsetWidth * between(ROW_HINT_SHARE)),
+            ),
+            behavior: "smooth",
+          });
+        }, between(ROW_HINT_DELAY));
+      },
+      { threshold: 0.5 },
+    );
+    observer.observe(row);
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(timer);
+      for (const type of inputs) row.removeEventListener(type, touched);
+    };
+  }, [row, enabled]);
+}
+/** Scroll state of one horizontal product row, for its header control. */
+function useSlider({ hint = false }: { hint?: boolean } = {}) {
   const [row, setRow] = useState<HTMLDivElement | null>(null);
-  const [edges, setEdges] = useState({ start: true, end: true });
+  const [edges, setEdges] = useState({
+    start: true,
+    end: true,
+    overflow: false,
+  });
+  const compact = useCompactWidth();
   useEffect(() => {
     if (!row) return;
     const measure = () => {
@@ -411,9 +513,12 @@ function useSlider() {
       const next = {
         start: row.scrollLeft <= 1,
         end: row.scrollLeft >= max - 1,
+        overflow: max > 1,
       };
       setEdges((current) =>
-        current.start === next.start && current.end === next.end
+        current.start === next.start &&
+        current.end === next.end &&
+        current.overflow === next.overflow
           ? current
           : next,
       );
@@ -427,8 +532,11 @@ function useSlider() {
       row.removeEventListener("scroll", measure);
     };
   }, [row]);
+  useRowHint(row, hint);
   return {
     ...edges,
+    // Arrows only on desktop, for a row that exists and scrolls (V1, DES-01, M6).
+    arrows: !compact && row !== null && edges.overflow,
     attach: setRow,
     scroll(direction: -1 | 1) {
       if (!row) return;
@@ -443,8 +551,10 @@ function useSlider() {
 }
 type Slider = ReturnType<typeof useSlider>;
 /**
- * Row header control in the basket stepper frame: [‹] Все [›]. Rows without a
- * catalogue target show the arrows only; an arrow at its end stays focusable.
+ * Row header control. With arrows (desktop, the row exists and scrolls): the
+ * basket stepper frame [‹] Все [›], or the arrows only for rows without a
+ * catalogue target; an arrow at its end stays focusable. Without arrows (phones,
+ * loading, error, no overflow): the plain "Все ›" link, or nothing.
  */
 function SliderControls({
   slider,
@@ -458,6 +568,17 @@ function SliderControls({
   more?: { href: string; title: string };
 }) {
   const t = copy[lang];
+  if (!slider.arrows)
+    return more ? (
+      <a
+        className="view-all-link"
+        href={more.href}
+        aria-label={`${t.viewAll}: ${more.title}`}
+      >
+        {t.viewAll}
+        <ChevronRight />
+      </a>
+    ) : null;
   const arrow = (direction: -1 | 1) => {
     const disabled = direction < 0 ? slider.start : slider.end;
     return (
@@ -539,7 +660,7 @@ function CategoryRow({
   const read = useRead(`${lang}:${category.id}`, (s) =>
     api.categoryProducts(lang, s, category.id),
   );
-  const slider = useSlider();
+  const slider = useSlider({ hint: true });
   // The Mini App hides a category section without products.
   if (read.result.status === "ready" && !read.result.data.length) return null;
   const id = `home-${category.slug}`;
@@ -603,7 +724,7 @@ function Home({
     Promise.all([api.banners(lang, s), api.bannerInterval(s)]),
   );
   const sale = useRead(lang, (s) => api.saleProducts(lang, s));
-  const saleSlider = useSlider();
+  const saleSlider = useSlider({ hint: true });
   const ready = categories.status === "ready" ? categories.data : [];
   return (
     <>
@@ -878,6 +999,7 @@ function Product({
         ?.quantity || 0
     : 0;
   const basket = basketCopy[lang];
+  const sizes = [...new Set(p.available_sizes.filter((v) => v.trim()))];
   const media = [
     ...new Set(
       [p.image_url, ...p.images].filter(
@@ -933,28 +1055,28 @@ function Product({
           <h1>{p.name}</h1>
           <Price product={p} lang={lang} />
           <Availability product={p} lang={lang} />
-          {p.requires_size && p.available_sizes.length > 0 && (
-            <p>
-              {t.sizes}: {p.available_sizes.join(", ")}
-            </p>
-          )}
           <div className="detail-purchase">
-            {p.requires_size && (
-              <label className="size-choice">
-                {basket.size}
-                <select
+            {p.requires_size && sizes.length > 0 && (
+              // One button per available size (SZ1), as in the card size dialog.
+              <div className="size-choice">
+                <span aria-hidden="true">{basket.size}</span>
+                <div
+                  className="size-chips"
+                  role="group"
                   aria-label={`${basket.size}: ${p.name}`}
-                  value={selectedSize}
-                  onChange={(e) => setSelectedSize(e.target.value)}
                 >
-                  <option value="">{basket.choose}</option>
-                  {p.available_sizes.map((value) => (
-                    <option key={value} value={value}>
+                  {sizes.map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={selectedSize === value}
+                      onClick={() => setSelectedSize(value)}
+                    >
                       {value}
-                    </option>
+                    </button>
                   ))}
-                </select>
-              </label>
+                </div>
+              </div>
             )}
             <Quantity
               add
@@ -1504,6 +1626,15 @@ export default function App() {
           data-hidden={headerScroll.hidden || undefined}
           // Focus that reaches the header (Tab, focus return) shows it.
           onFocus={headerScroll.reveal}
+          // Focus leaving it after a scroll made while focus was inside does
+          // not slide it away by itself; the next downward scroll does.
+          onBlur={(e) => {
+            if (
+              !(e.relatedTarget instanceof Node) ||
+              !e.currentTarget.contains(e.relatedTarget)
+            )
+              headerScroll.reveal();
+          }}
           onKeyDown={(e) => {
             if (compact && searchOpen && e.key === "Escape") {
               e.preventDefault();
@@ -1538,8 +1669,9 @@ export default function App() {
                     ref={searchToggle}
                     className="top-icon top-search"
                     aria-label={t.search}
+                    // The form exists only while expanded, and then this
+                    // icon is not rendered: no aria-controls to a missing id.
                     aria-expanded={false}
-                    aria-controls="top-search"
                     onClick={() => setSearchOpen(true)}
                   >
                     <SearchIcon />

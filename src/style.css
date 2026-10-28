@@ -605,14 +605,38 @@ h3 {
   margin-top: 0.75rem;
   font-size: 0.875rem;
 }
-.size-choice select {
-  width: 100%;
-  max-width: 100%;
-  min-height: 2.75rem;
-  padding: 0.5rem;
-  border: 1px solid var(--bt-border);
+/*
+ * Product page size buttons (SZ1): neutral face and border, hover grey,
+ * the chosen size in the "selected" grey and bold; the green ring only for
+ * keyboard focus (the global :focus-visible).
+ */
+.size-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.size-chips button {
+  min-width: var(--bt-control-min-height);
+  min-height: var(--bt-control-min-height);
+  padding: 0 1rem;
+  border: var(--bt-border-width) solid var(--bt-border);
   border-radius: var(--bt-radius-control);
-  background: var(--bt-surface);
+  background: var(--bt-neutral);
+  box-shadow: none;
+  color: var(--bt-text);
+  font-size: var(--bt-font-size-body);
+}
+.size-chips button:hover:enabled {
+  background: var(--bt-surface-hover);
+}
+.size-chips button:active:enabled {
+  background: var(--bt-neutral-active);
+  box-shadow: none;
+}
+.size-chips button[aria-pressed="true"],
+.size-chips button[aria-pressed="true"]:hover:enabled {
+  background: var(--bt-surface-selected);
+  font-weight: var(--bt-font-weight-strong);
 }
 .filter-row,
 .pagination,
@@ -1090,6 +1114,13 @@ h3 {
   .topbar .search input,
   .topbar .search button {
     min-height: calc(var(--bt-control-min-height) - 2 * var(--bt-border-width));
+  }
+  /*
+   * The focused search field looks the same as unfocused: no outline and no
+   * border change; the text caret shows the focus. "Найти" and × keep the ring.
+   */
+  .topbar .search > input:focus-visible {
+    outline: none;
   }
   /*
    * Phones: the sticky top bar slides away on downward scroll and returns on

@@ -4,6 +4,7 @@ import {
   useState,
   type KeyboardEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 import Account from "./Account";
 import Assistant, { type BeforeAdd } from "./Assistant";
@@ -26,7 +27,20 @@ import * as api from "./catalogue";
 import { useGuestBasket } from "./guestBasket";
 import { href, parseLocation, type Location } from "./navigation";
 import logoUrl from "./assets/logo-biotact.svg";
-import { ChevronLeft, ChevronRight } from "./icons";
+import {
+  ChevronLeft,
+  ChevronRight,
+  CloseIcon,
+  CookingPotIcon,
+  GiftIcon,
+  GlobeIcon,
+  HeartPulseIcon,
+  LayoutGridIcon,
+  PillIcon,
+  SearchIcon,
+  SparklesIcon,
+  UserIcon,
+} from "./icons";
 
 const copy = {
   ru: {
@@ -36,6 +50,8 @@ const copy = {
     all: "Все товары",
     search: "Поиск товаров",
     find: "Найти",
+    closeSearch: "Закрыть поиск",
+    language: "Язык",
     loading: "Загружаем…",
     error: "Не удалось загрузить данные. Проверьте соединение и повторите.",
     retry: "Повторить",
@@ -86,6 +102,8 @@ const copy = {
     all: "Barcha mahsulotlar",
     search: "Mahsulot qidirish",
     find: "Qidirish",
+    closeSearch: "Qidiruvni yopish",
+    language: "Til",
     loading: "Yuklanmoqda…",
     error:
       "Maʼlumotlarni yuklab boʻlmadi. Ulanishni tekshirib, qayta urinib koʻring.",
@@ -132,6 +150,13 @@ const copy = {
   },
 };
 const slugs = ["product", "vitaminy-set", "tehnika", "active-life"];
+/** Approved menu icon set A (D9), keyed by category slug. */
+const categoryIcons: Record<string, () => ReactNode> = {
+  product: PillIcon,
+  "vitaminy-set": GiftIcon,
+  tehnika: CookingPotIcon,
+  "active-life": HeartPulseIcon,
+};
 type Read<T> =
   | { status: "loading" }
   | { status: "error"; error: unknown }
@@ -994,13 +1019,18 @@ function Product({
     </>
   );
 }
-function Search({ loc }: { loc: Location }) {
+/**
+ * Product search. On phones it is the in-place expanded form of the header
+ * search icon (`onClose`): it takes focus, and submit closes it.
+ */
+function Search({ loc, onClose }: { loc: Location; onClose?: () => void }) {
   const [search, setSearch] = useState(loc.q || "");
   const t = copy[loc.lang];
   return (
     <form
       className="search"
       role="search"
+      {...(onClose ? { id: "top-search" } : {})}
       onSubmit={(e) => {
         e.preventDefault();
         window.location.hash =
@@ -1010,9 +1040,12 @@ function Search({ loc }: { loc: Location }) {
             page: 1,
             ...(search.trim() ? { q: search.trim() } : {}),
           }).split("#")[1] || "";
+        onClose?.();
       }}
     >
+      {onClose && <SearchIcon />}
       <input
+        autoFocus={!!onClose}
         aria-label={t.search}
         placeholder={t.search}
         value={search}
@@ -1021,6 +1054,64 @@ function Search({ loc }: { loc: Location }) {
       <button type="submit">{t.find}</button>
     </form>
   );
+}
+/** Scroll travel that changes the phone header state; smaller moves accumulate. */
+const HEADER_SCROLL_THRESHOLD = 10;
+/**
+ * Phone header hides on downward scroll and returns on upward scroll (M5).
+ * `active` is false on desktop and while a surface or the search is open; the
+ * header is shown on every change of `active` or `view`. Travel counts only
+ * after the visitor's own scroll input since that change, so content loading
+ * into a new view (and the browser's scroll clamping and restoration) never
+ * hides it. The position is clamped, so overscroll bounce is not travel.
+ */
+function useHiddenHeader(
+  active: boolean,
+  view: string,
+  header: RefObject<HTMLElement | null>,
+) {
+  const [hidden, setHidden] = useState(false);
+  const [seen, setSeen] = useState({ active, view });
+  if (seen.active !== active || seen.view !== view) {
+    setSeen({ active, view });
+    setHidden(false);
+  }
+  useEffect(() => {
+    if (!active) return;
+    const position = () =>
+      Math.min(
+        Math.max(window.scrollY, 0),
+        Math.max(document.documentElement.scrollHeight - window.innerHeight, 0),
+      );
+    let last = position(),
+      frame = 0,
+      armed = false;
+    const arm = () => {
+      armed = true;
+    };
+    const update = () => {
+      frame = 0;
+      const y = position();
+      if (!armed) last = y;
+      if (Math.abs(y - last) < HEADER_SCROLL_THRESHOLD) return;
+      setHidden(y > last && y > (header.current?.offsetHeight ?? 0));
+      last = y;
+    };
+    const scroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    const inputs = ["wheel", "touchstart", "keydown", "pointerdown"];
+    for (const type of inputs)
+      window.addEventListener(type, arm, { capture: true, passive: true });
+    window.addEventListener("scroll", scroll, { passive: true });
+    return () => {
+      for (const type of inputs)
+        window.removeEventListener(type, arm, { capture: true });
+      window.removeEventListener("scroll", scroll);
+      cancelAnimationFrame(frame);
+    };
+  }, [active, view, header]);
+  return { hidden, reveal: () => setHidden(false) };
 }
 export default function App() {
   const [hash, setHash] = useState(window.location.hash);
@@ -1041,6 +1132,16 @@ export default function App() {
   const [compact, setCompact] = useState(
     () => window.matchMedia("(max-width: 999px)").matches,
   );
+  // Phone header search: an icon that expands into the form in place (M2).
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchToggle = useRef<HTMLButtonElement>(null),
+    searchFocusReturn = useRef(false);
+  const header = useRef<HTMLElement>(null);
+  const headerScroll = useHiddenHeader(
+    compact && surface === null && !searchOpen,
+    hash,
+    header,
+  );
   const hashRef = useRef(hash);
   const dialog = useRef<HTMLDialogElement>(null),
     assistantDialog = useRef<HTMLDialogElement>(null),
@@ -1059,6 +1160,7 @@ export default function App() {
       if (previous.lang !== next.lang) setBasketLanguageRevision((n) => n + 1);
       hashRef.current = window.location.hash;
       setHash(window.location.hash);
+      setSearchOpen(false);
       setSurface((current) =>
         current === "size" || (current === "basket" && !languageOnly)
           ? null
@@ -1168,6 +1270,7 @@ export default function App() {
     const change = () => {
       setCompact(media.matches);
       if (!media.matches) {
+        setSearchOpen(false);
         if (dialog.current?.contains(document.activeElement))
           requestAnimationFrame(() =>
             document.querySelector<HTMLElement>(".sidebar .brand")?.focus(),
@@ -1213,6 +1316,17 @@ export default function App() {
     () => () => document.documentElement.classList.remove("modal-open"),
     [],
   );
+  useEffect(() => {
+    // Closing the expanded search returns focus to its icon once it is back.
+    if (!searchOpen && searchFocusReturn.current) {
+      searchFocusReturn.current = false;
+      searchToggle.current?.focus();
+    }
+  }, [searchOpen]);
+  function closeSearch() {
+    searchFocusReturn.current = true;
+    setSearchOpen(false);
+  }
   const context =
     loc.view === "home"
       ? t.home
@@ -1224,7 +1338,7 @@ export default function App() {
   const all = href({ view: "catalogue", lang: loc.lang, page: 1 });
   const basketButton = (
     <button
-      className="basket-button"
+      className={compact ? "basket-button top-icon" : "basket-button"}
       aria-label={`${basketCopy[loc.lang].title}${units ? ` · ${units}` : ""}`}
       onClick={(e) => show("basket", e.currentTarget)}
     >
@@ -1236,6 +1350,29 @@ export default function App() {
         </span>
       )}
     </button>
+  );
+  const languages = (labelledBy?: string) => (
+    <div
+      className="languages"
+      {...(labelledBy
+        ? { role: "group", "aria-labelledby": labelledBy }
+        : { "aria-label": "Language" })}
+    >
+      <a
+        lang="ru"
+        aria-current={loc.lang === "ru" ? "true" : undefined}
+        href={href({ ...loc, lang: "ru" })}
+      >
+        RU
+      </a>
+      <a
+        lang="uz"
+        aria-current={loc.lang === "uz" ? "true" : undefined}
+        href={href({ ...loc, lang: "uz" })}
+      >
+        UZ
+      </a>
+    </div>
   );
   // The basket sits in the visible side menu on desktop and in the top bar on phones.
   const navigation = (sidebar: boolean) => (
@@ -1265,12 +1402,16 @@ export default function App() {
         </button>
         {expanded && (
           <div className="category-nav">
-            <a href={all}>{t.all}</a>
+            <a href={all}>
+              <LayoutGridIcon />
+              {t.all}
+            </a>
             {slugs.map((slug, i) => {
               const c =
                 cats.result.status === "ready"
                   ? cats.result.data.find((v) => v.slug === slug)
                   : undefined;
+              const CategoryIcon = categoryIcons[slug];
               return c ? (
                 <a
                   key={slug}
@@ -1281,10 +1422,12 @@ export default function App() {
                     category: c.id,
                   })}
                 >
+                  {CategoryIcon && <CategoryIcon />}
                   {c.name}
                 </a>
               ) : cats.result.status === "ready" ? (
                 <span key={slug} className="muted">
+                  {CategoryIcon && <CategoryIcon />}
                   {t.groups[i]} — {t.missing}
                 </span>
               ) : null;
@@ -1302,12 +1445,22 @@ export default function App() {
         </button>
         {sidebar && !compact && basketButton}
         <a
+          className={sidebar ? undefined : "nav-account"}
           aria-current={loc.view === "account" ? "page" : undefined}
           href={href({ view: "account", lang: loc.lang, page: 1 })}
         >
+          {!sidebar && <UserIcon />}
           {t.account}
         </a>
       </nav>
+      {/* Phones choose the language once in the menu, not in the top bar. */}
+      {!sidebar && compact && (
+        <div className="drawer-language">
+          <GlobeIcon />
+          <span id="drawer-language-label">{t.language}</span>
+          {languages("drawer-language-label")}
+        </div>
+      )}
     </>
   );
   return (
@@ -1345,44 +1498,73 @@ export default function App() {
         {navigation(false)}
       </dialog>
       <div className="workspace">
-        <header className="topbar">
-          <button
-            className="menu-toggle"
-            onClick={(e) => show("menu", e.currentTarget)}
-          >
-            {t.menu} ☰
-          </button>
-          <Search key={loc.q || ""} loc={loc} />
-          <div className="top-utilities">
-            <button
-              className="top-ai"
-              aria-controls="consultant"
-              aria-expanded={surface === "assistant"}
-              onClick={(e) => show("assistant", e.currentTarget)}
-            >
-              {t.aiShort}
-            </button>
-            {compact && basketButton}
-            <a href={href({ view: "account", lang: loc.lang, page: 1 })}>
-              {t.account}
-            </a>
-            <div className="languages" aria-label="Language">
-              <a
-                lang="ru"
-                aria-current={loc.lang === "ru" ? "true" : undefined}
-                href={href({ ...loc, lang: "ru" })}
+        <header
+          ref={header}
+          className="topbar"
+          data-hidden={headerScroll.hidden || undefined}
+          // Focus that reaches the header (Tab, focus return) shows it.
+          onFocus={headerScroll.reveal}
+          onKeyDown={(e) => {
+            if (compact && searchOpen && e.key === "Escape") {
+              e.preventDefault();
+              closeSearch();
+            }
+          }}
+        >
+          {compact && searchOpen ? (
+            // Expanded phone search takes the place of the whole row (D2).
+            <>
+              <Search key={loc.q || ""} loc={loc} onClose={closeSearch} />
+              <button
+                className="top-icon search-close"
+                aria-label={t.closeSearch}
+                onClick={closeSearch}
               >
-                RU
-              </a>
-              <a
-                lang="uz"
-                aria-current={loc.lang === "uz" ? "true" : undefined}
-                href={href({ ...loc, lang: "uz" })}
+                <CloseIcon />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                className="menu-toggle"
+                onClick={(e) => show("menu", e.currentTarget)}
               >
-                UZ
-              </a>
-            </div>
-          </div>
+                {t.menu} ☰
+              </button>
+              {!compact && <Search key={loc.q || ""} loc={loc} />}
+              <div className="top-utilities">
+                {compact && (
+                  <button
+                    ref={searchToggle}
+                    className="top-icon top-search"
+                    aria-label={t.search}
+                    aria-expanded={false}
+                    aria-controls="top-search"
+                    onClick={() => setSearchOpen(true)}
+                  >
+                    <SearchIcon />
+                  </button>
+                )}
+                <button
+                  className={compact ? "top-icon top-ai" : "top-ai"}
+                  aria-label={compact ? t.ai : undefined}
+                  aria-controls="consultant"
+                  aria-expanded={surface === "assistant"}
+                  onClick={(e) => show("assistant", e.currentTarget)}
+                >
+                  {compact ? <SparklesIcon /> : t.aiShort}
+                </button>
+                {compact && basketButton}
+                {/* Phones reach Account and the language in the menu (M3, M4). */}
+                {!compact && (
+                  <a href={href({ view: "account", lang: loc.lang, page: 1 })}>
+                    {t.account}
+                  </a>
+                )}
+                {!compact && languages()}
+              </div>
+            </>
+          )}
         </header>
         <main id="content" className="content" tabIndex={-1}>
           {loc.view === "home" && (

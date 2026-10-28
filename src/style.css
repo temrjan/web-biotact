@@ -163,6 +163,34 @@ h3 {
 .nav-primary > .basket-button .basket-badge {
   margin-left: auto;
 }
+.nav-primary > .nav-account {
+  justify-content: flex-start;
+  gap: 0.75rem;
+}
+.nav-account .icon,
+.drawer-language .icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+}
+.drawer-language {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding: 1rem 0 0 0.75rem;
+  border-top: 1px solid var(--bt-border-subtle);
+  color: var(--bt-text-muted);
+}
+.drawer-language .languages {
+  margin-left: auto;
+  gap: 0.25rem;
+  color: var(--bt-text);
+}
+.drawer-language .languages a {
+  padding-inline: 0.75rem;
+  border-radius: var(--bt-radius-control);
+}
 .category-nav {
   display: grid;
   gap: 0.25rem;
@@ -171,10 +199,29 @@ h3 {
 }
 .category-nav a,
 .category-nav > span {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
   padding: 0.5rem;
   border-radius: 0.625rem;
   text-decoration: none;
   overflow-wrap: anywhere;
+}
+/* S1: a hairline between category entries only, centred in the gap. */
+.category-nav > * + *::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: calc(-0.125rem - var(--bt-border-width) / 2);
+  border-top: var(--bt-border-width) solid var(--bt-border-subtle);
+}
+/* S2: approved line icons in brand green (D9). */
+.category-nav .icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+  color: var(--bt-action);
 }
 .category-nav > span {
   font-size: 0.875rem;
@@ -216,6 +263,16 @@ h3 {
   border: 0;
   background: transparent;
   padding: 0.5rem 0.75rem;
+}
+/* Decorative magnifier of the expanded phone search. */
+.search > .icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+  color: var(--bt-text-muted);
+}
+.search > .icon + input {
+  padding-left: 0.5rem;
 }
 .top-utilities {
   display: flex;
@@ -984,12 +1041,69 @@ h3 {
   .menu-toggle {
     display: inline-flex;
   }
-  /* Phones keep the basket and menu in reach while scrolling. */
+  /* Phone header: one row of plate-less 44px icons (M1, D1). */
+  .topbar {
+    min-height: var(--bt-header-min-height-compact);
+    gap: 0.5rem;
+  }
+  .top-utilities {
+    gap: 0.25rem;
+    flex-wrap: nowrap;
+  }
+  .topbar .top-icon {
+    position: relative;
+    width: var(--bt-control-min-height);
+    height: var(--bt-control-min-height);
+    min-height: var(--bt-control-min-height);
+    flex-shrink: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--bt-action);
+  }
+  .topbar .top-icon:hover:enabled {
+    background: var(--bt-surface-hover);
+  }
+  .topbar .top-icon:active:enabled {
+    background: var(--bt-neutral-active);
+    box-shadow: none;
+  }
+  .topbar .top-icon .icon,
+  .topbar .top-icon .cart-icon {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+  .topbar .basket-label {
+    display: none;
+  }
+  .topbar .basket-badge {
+    position: absolute;
+    top: 0;
+    right: 0;
+  }
+  .topbar .search {
+    flex: 1 1 0;
+    max-width: none;
+  }
+  /* The bordered form stays 44px tall, so expanding keeps the row height. */
+  .topbar .search input,
+  .topbar .search button {
+    min-height: calc(var(--bt-control-min-height) - 2 * var(--bt-border-width));
+  }
+  /*
+   * Phones: the sticky top bar slides away on downward scroll and returns on
+   * upward scroll (M5); focus inside it always keeps it on screen.
+   */
   .topbar {
     position: sticky;
     top: 0;
     z-index: var(--bt-layer-header);
     background: var(--bt-canvas);
+    transition: transform 0.2s ease;
+  }
+  .topbar[data-hidden]:not(:focus-within) {
+    transform: translateY(-100%);
   }
   .assistant-open .workspace {
     margin-right: 0;
@@ -1029,27 +1143,14 @@ h3 {
     gap: 1rem;
   }
 }
+@media (max-width: 999px) and (prefers-reduced-motion: reduce) {
+  .topbar {
+    transition: none;
+  }
+}
 @media (max-width: 600px) {
   h1 {
     font-size: var(--bt-font-size-page-compact);
-  }
-  .topbar {
-    gap: 0.5rem;
-  }
-  .search {
-    order: 3;
-    flex-basis: 100%;
-    max-width: none;
-  }
-  .top-utilities {
-    gap: 0.25rem;
-    flex: 1 1 0;
-  }
-  .top-utilities button {
-    padding-inline: 0.5rem;
-  }
-  .basket-label {
-    display: none;
   }
   .card-copy {
     padding: 1rem 0.75rem;

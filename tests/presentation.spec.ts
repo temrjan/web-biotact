@@ -18,6 +18,12 @@ async function noOverflow(page: Page) {
       ),
   ).toBe(true);
 }
+/** RU/UZ sits in the desktop top bar and, below 1000px, in the phone menu (M4). */
+async function chooseLanguage(page: Page, lang: "ru" | "uz") {
+  if (await page.locator(".menu-toggle").isVisible())
+    await page.locator(".menu-toggle").click();
+  await page.locator(`.languages [lang="${lang}"]`).click();
+}
 async function dialogCount(page: Page, count: number) {
   await expect(page.locator("dialog[open]")).toHaveCount(count);
 }
@@ -332,7 +338,15 @@ test("brand-green 2px keyboard focus remains visible on detail, fields and modal
       () => (document.documentElement.style.fontSize = "125%"),
     );
     await page.keyboard.press("Tab");
+    // Phone header icons and the expanded search field keep the green ring.
+    for (const icon of [".top-search", ".top-ai", ".topbar .basket-button"])
+      await greenFocus(page.locator(icon));
+    await page.locator(".top-search").focus();
+    await page.keyboard.press("Enter");
     await greenFocus(page.locator(".search input"));
+    await greenFocus(page.locator(".search-close"));
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".top-search")).toBeFocused();
     await greenFocus(page.locator('.gallery button[aria-pressed="true"]'));
     const detail = page.locator(".product-summary"),
       choice = detail.getByRole("combobox");
@@ -379,7 +393,8 @@ test("brand-green 2px keyboard focus remains visible on detail, fields and modal
   await page.route("**/api/v1/buyer/auth/**", (r) =>
     r.fulfill({ status: 503, json: {} }),
   );
-  await page.locator(".top-utilities > a").click();
+  await page.locator(".menu-toggle").click();
+  await page.locator(".drawer .nav-account").click();
   await page.keyboard.press("Tab");
   await greenFocus(page.locator(".account button"));
   await greenFocus(page.locator(".account a").first());
@@ -1150,7 +1165,7 @@ test("Home banners show admin images in server order at 3:1 with Mini App links,
     await page.evaluate(() => {
       document.documentElement.style.fontSize = "";
     });
-    await page.locator('.languages [lang="uz"]').click();
+    await chooseLanguage(page, "uz");
     await heroSlide(page, 6);
     await expect(page.locator(".hero-next")).toHaveAccessibleName(
       "Keyingi banner",
@@ -2275,7 +2290,93 @@ test("side menu shows no per-item loading or error text; the page keeps its own 
   );
 });
 
-test("basket sits in the side menu on desktop and in the sticky top bar on phones", async ({
+/**
+ * S1/S2 in one menu: each category entry has its set-A icon in brand green;
+ * hairlines separate category entries and nothing else.
+ */
+async function categoryMenu(menu: Locator) {
+  const entries = menu.locator(".category-nav > *");
+  await expect(entries).toHaveCount(5);
+  const marks = await entries.evaluateAll((nodes) =>
+    nodes.map((n) => {
+      const svg = n.querySelector("svg");
+      const r = svg?.getBoundingClientRect();
+      const line = getComputedStyle(n, "::before");
+      return {
+        icons: n.querySelectorAll("svg").length,
+        // First drawing primitive identifies the Lucide icon.
+        shape: svg?.firstElementChild?.getAttribute("d") ?? svg?.innerHTML,
+        size: [r?.width, r?.height],
+        colour: svg && getComputedStyle(svg).color,
+        divider:
+          line.content === "none"
+            ? null
+            : `${line.borderTopWidth} ${line.borderTopStyle} ${line.borderTopColor}`,
+      };
+    }),
+  );
+  expect(marks.map((m) => m.icons)).toEqual([1, 1, 1, 1, 1]);
+  expect(marks.map((m) => m.shape?.slice(0, 18))).toEqual([
+    '<rect width="7" he', // layout-grid: Все товары
+    "m10.5 20.5 10-10a4", // pill: product
+    '<rect x="3" y="8" ', // gift: vitaminy-set
+    "M2 12h20", // cooking-pot: tehnika
+    "M2 9.5a5.5 5.5 0 0", // heart-pulse: active-life
+  ]);
+  for (const m of marks) {
+    expect(m.size).toEqual([20, 20]);
+    expect(m.colour).toBe("rgb(12, 61, 43)");
+  }
+  expect(marks.map((m) => m.divider)).toEqual([
+    null,
+    "1px solid rgb(214, 214, 214)",
+    "1px solid rgb(214, 214, 214)",
+    "1px solid rgb(214, 214, 214)",
+    "1px solid rgb(214, 214, 214)",
+  ]);
+  // Top-level menu entries keep no divider.
+  expect(
+    await menu
+      .locator(".nav-primary > *")
+      .evaluateAll((nodes) =>
+        nodes.every((n) => getComputedStyle(n, "::before").content === "none"),
+      ),
+  ).toBe(true);
+}
+
+test("side menu and phone menu separate category entries with hairlines and show the approved icons", async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/#home?lang=ru");
+  const side = page.locator(".sidebar");
+  await expect(side.locator(".category-nav a")).toHaveCount(4);
+  await categoryMenu(side);
+  // Each icon sits before its name; the names and targets are unchanged.
+  await expect(side.locator(".category-nav a")).toHaveText([
+    "Все товары",
+    "Нутриенты",
+    "Наборы",
+    "Техника",
+  ]);
+  await expect(
+    side.getByRole("link", { name: "Нутриенты", exact: true }),
+  ).toHaveAttribute("href", "/#catalogue?category=301&page=1&lang=ru");
+  await noOverflow(page);
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/#home?lang=uz");
+    await page.locator(".menu-toggle").click();
+    const drawer = page.locator(".drawer");
+    await expect(drawer.locator(".category-nav a")).toHaveCount(4);
+    await categoryMenu(drawer);
+    await noOverflow(page);
+    await page.keyboard.press("Escape");
+  }
+});
+
+test("basket sits in the side menu on desktop and in the phone top bar that returns on upward scroll", async ({
   page,
 }) => {
   await fixture(page);
@@ -2318,16 +2419,19 @@ test("basket sits in the side menu on desktop and in the sticky top bar on phone
   await expect(
     page.locator(".sidebar .basket-button, .drawer .basket-button"),
   ).toHaveCount(0);
-  await page
-    .locator('.product-grid [data-product-id="4020"]')
-    .scrollIntoViewIfNeeded();
-  expect(await page.evaluate(() => scrollY)).toBeGreaterThan(1000);
+  // Focus returned to the AI button above would keep the header on screen.
+  await page.locator("#content").focus();
+  await page.mouse.move(195, 400);
+  await page.mouse.wheel(0, 1600);
+  await page.waitForFunction(() => scrollY > 1000);
+  await headerShown(page, false);
+  await page.mouse.wheel(0, -200);
+  await headerShown(page, true);
   await expect(page.locator(".topbar")).toHaveCSS("position", "sticky");
-  expect((await page.locator(".topbar").boundingBox())?.y).toBe(0);
   await page.locator('.product-grid [data-product-id="4019"] .add').click();
   await expect(topBasket.locator(".basket-badge")).toHaveText("2");
   await expect(topBasket).toBeInViewport();
-  // The sticky bar stays above cards and their sale badges.
+  // The returned sticky bar stays above cards and their sale badges.
   const hit = await topBasket.evaluate((n) => {
     const r = n.getBoundingClientRect();
     return n.contains(
@@ -2340,6 +2444,314 @@ test("basket sits in the side menu on desktop and in the sticky top bar on phone
   await page.keyboard.press("Escape");
   await expect(topBasket).toBeFocused();
   await noOverflow(page);
+});
+
+/** Two animation frames: the header scroll handler runs in one. */
+async function frames(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise((done) =>
+        requestAnimationFrame(() => requestAnimationFrame(done)),
+      ),
+  );
+}
+/** The phone top bar is on screen at y = 0, or slid fully above it (M5). */
+async function headerShown(page: Page, shown: boolean) {
+  const bar = page.locator(".topbar");
+  if (shown) await expect(bar).not.toHaveAttribute("data-hidden");
+  else await expect(bar).toHaveAttribute("data-hidden", "true");
+  await expect(bar).toHaveCSS(
+    "transform",
+    shown ? "none" : "matrix(1, 0, 0, 1, 0, -69)",
+  );
+  await expect
+    .poll(async () => (await bar.boundingBox())?.y)
+    .toBe(shown ? 0 : -69);
+}
+/** Scroll by script (also works under a modal scroll lock) and let a frame pass. */
+async function scrollPage(page: Page, by: number) {
+  await page.evaluate((y) => window.scrollBy(0, y), by);
+  await frames(page);
+}
+/** One phone header icon: a 44px plate-less brand-green button with its name. */
+async function headerIcon(icon: Locator, name: string) {
+  await expect(icon).toBeVisible();
+  await expect(icon).toHaveAccessibleName(name);
+  const box = await icon.boundingBox();
+  expect([box?.width, box?.height]).toEqual([44, 44]);
+  await expect(icon).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(icon).toHaveCSS("box-shadow", "none");
+  await expect(icon).toHaveCSS("border-top-width", "0px");
+  await expect(icon).toHaveCSS("color", "rgb(12, 61, 43)");
+  await expect(icon.locator("svg")).toHaveCount(1);
+}
+
+test("phone header is one row of icons with in-place search; Account and RU/UZ move to the menu; desktop header unchanged", async ({
+  page,
+}) => {
+  await fixture(page);
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/#home?lang=ru");
+    await expect(page.locator(".hero-stage")).toBeVisible();
+    const bar = page.locator(".topbar");
+    expect((await bar.boundingBox())?.height).toBe(69);
+    const items = bar.locator(":scope > *, .top-utilities > *");
+    expect(
+      await items.evaluateAll((nodes) =>
+        nodes.map((n) => n.className || n.tagName),
+      ),
+    ).toEqual([
+      "menu-toggle",
+      "top-utilities",
+      "top-icon top-search",
+      "top-icon top-ai",
+      "basket-button top-icon",
+    ]);
+    await expect(page.locator(".menu-toggle")).toHaveText("Меню ☰");
+    await headerIcon(page.locator(".top-search"), "Поиск товаров");
+    await headerIcon(page.locator(".top-ai"), "ИИ-консультант");
+    await headerIcon(page.locator(".topbar .basket-button"), "Корзина");
+    // All four controls share one row.
+    const centres = await bar
+      .locator(".menu-toggle, .top-icon")
+      .evaluateAll((nodes) =>
+        nodes.map((n) => {
+          const r = n.getBoundingClientRect();
+          return r.y + r.height / 2;
+        }),
+      );
+    expect(new Set(centres).size).toBe(1);
+    await expect(page.locator(".top-search")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    await expect(page.locator(".top-search")).toHaveAttribute(
+      "aria-controls",
+      "top-search",
+    );
+    await expect(bar.locator(".search, .languages, a")).toHaveCount(0);
+    await expect(bar).not.toContainText("ИИ · помощь");
+    await page.locator(".top-search").hover();
+    await expect(page.locator(".top-search")).toHaveCSS(
+      "background-color",
+      "rgb(227, 227, 227)",
+    );
+    await noOverflow(page);
+  }
+
+  // M2: the search icon expands into the field in place of the whole row.
+  await page.locator(".top-search").click();
+  const form = page.locator(".topbar #top-search");
+  await expect(form).toBeVisible();
+  await expect(form).toHaveAttribute("role", "search");
+  await expect(
+    form.getByRole("textbox", { name: "Поиск товаров" }),
+  ).toBeFocused();
+  await expect(
+    page.locator(".topbar .menu-toggle, .topbar .top-utilities"),
+  ).toHaveCount(0);
+  const close = page.getByRole("button", {
+    name: "Закрыть поиск",
+    exact: true,
+  });
+  await expect(close).toBeVisible();
+  expect((await page.locator(".topbar").boundingBox())?.height).toBe(69);
+  await noOverflow(page);
+  await page.keyboard.type("Match 4");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/#catalogue\?q=Match\+4&page=1&lang=ru$/);
+  await expect(page.locator(".product-grid article")).toHaveCount(6);
+  await expect(form).toHaveCount(0);
+  await expect(page.locator(".top-search")).toBeFocused();
+  // On a results page the field opens with the current query.
+  await page.locator(".top-search").click();
+  await expect(form.locator("input")).toHaveValue("Match 4");
+  await close.click();
+  await expect(form).toHaveCount(0);
+  await expect(page.locator(".top-search")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(form.locator("input")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(form).toHaveCount(0);
+  await expect(page.locator(".top-search")).toBeFocused();
+  // The expanded field does not stay open across views.
+  await page.locator(".top-search").click();
+  await page.evaluate(() => (location.hash = "#home?lang=ru"));
+  await expect(page.locator(".hero-stage")).toBeVisible();
+  await expect(form).toHaveCount(0);
+  await expect(page.locator(".top-search")).toBeVisible();
+
+  // M3, M4: Account and the language live in the phone menu.
+  await page.locator(".menu-toggle").click();
+  const drawer = page.locator(".drawer");
+  await expect(drawer).toBeVisible();
+  const account = drawer.getByRole("link", { name: "Аккаунт", exact: true });
+  await expect(account).toHaveAttribute("href", "/#account?lang=ru");
+  await expect(account.locator("svg")).toHaveCount(1);
+  const language = drawer.getByRole("group", { name: "Язык", exact: true });
+  await expect(language.getByRole("link")).toHaveText(["RU", "UZ"]);
+  await expect(language.locator('[lang="ru"]')).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  await expect(page.locator(".languages")).toHaveCount(1);
+  const menuItems = await drawer.evaluate((d) =>
+    Array.from(d.querySelectorAll(".nav-primary > *, .drawer-language")).map(
+      (n) => n.className,
+    ),
+  );
+  expect(menuItems.indexOf("drawer-language")).toBe(menuItems.length - 1);
+  expect(menuItems[menuItems.length - 2]).toBe("nav-account");
+  await expect(drawer.locator(".drawer-language")).toHaveCSS(
+    "border-top",
+    "1px solid rgb(214, 214, 214)",
+  );
+  await language.locator('[lang="uz"]').click();
+  await expect(drawer).not.toBeVisible();
+  await expect(page).toHaveURL(/#home\?lang=uz$/);
+  await expect(page.locator(".menu-toggle")).toBeFocused();
+  await headerIcon(page.locator(".top-search"), "Mahsulot qidirish");
+  await headerIcon(page.locator(".top-ai"), "AI-maslahatchi");
+  await headerIcon(page.locator(".topbar .basket-button"), "Savat");
+  await page.locator(".top-search").click();
+  await expect(
+    page.getByRole("button", { name: "Qidiruvni yopish", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.locator(".menu-toggle").click();
+  await expect(
+    drawer.getByRole("group", { name: "Til", exact: true }),
+  ).toBeVisible();
+  await expect(drawer.locator('.languages [lang="uz"]')).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  await expect(
+    drawer.getByRole("link", { name: "Akkaunt", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  // 125% text keeps the bar usable without horizontal overflow.
+  await page.evaluate(() => (document.documentElement.style.fontSize = "125%"));
+  await noOverflow(page);
+  await page.evaluate(() => (document.documentElement.style.fontSize = ""));
+
+  // Desktop keeps its search field, text AI button, Account and RU/UZ (D3).
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/#home?lang=ru");
+  const top = page.locator(".topbar");
+  await expect(
+    top.getByRole("textbox", { name: "Поиск товаров" }),
+  ).toBeVisible();
+  await expect(top.locator(".top-ai")).toHaveText("ИИ · помощь");
+  await expect(top.getByRole("link", { name: "Аккаунт" })).toBeVisible();
+  await expect(top.locator(".languages a")).toHaveText(["RU", "UZ"]);
+  await expect(page.locator(".languages")).toHaveCount(1);
+  await expect(
+    page.locator(".top-search, .top-icon, .menu-toggle"),
+  ).toHaveCount(1);
+  await expect(page.locator(".menu-toggle")).toBeHidden();
+  expect((await top.boundingBox())?.height).toBe(79);
+});
+
+test("phone header hides on downward scroll and returns on upward scroll; never hidden with a surface, the search or focus inside", async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/#catalogue?page=1&lang=ru");
+  await expect(page.locator(".product-grid article")).toHaveCount(20);
+  const bar = page.locator(".topbar");
+  await expect(bar).toHaveCSS("transition-duration", "0.2s");
+  await page.mouse.move(195, 500);
+  // Travel within the header height at the top of the page keeps it.
+  await page.mouse.wheel(0, 40);
+  await page.waitForFunction(() => scrollY >= 40);
+  await frames(page);
+  await headerShown(page, true);
+  await page.mouse.wheel(0, 600);
+  await headerShown(page, false);
+  await expect(page.locator(".menu-toggle")).not.toBeInViewport();
+  // A move below the threshold (bounce, address bar) changes nothing.
+  await scrollPage(page, -6);
+  await headerShown(page, false);
+  await page.mouse.wheel(0, -120);
+  await headerShown(page, true);
+  await scrollPage(page, 600);
+  await headerShown(page, false);
+  // Reaching the top shows it.
+  await scrollPage(page, -10000);
+  await headerShown(page, true);
+
+  // Focus in the header shows it and keeps it while scrolling.
+  await scrollPage(page, 800);
+  await headerShown(page, false);
+  await page.locator(".top-search").focus();
+  await headerShown(page, true);
+  await scrollPage(page, 600);
+  await expect(bar).toHaveCSS("transform", "none");
+  expect((await bar.boundingBox())?.y).toBe(0);
+  await page.locator("#content").focus();
+
+  // Each surface and the expanded search keep the header on screen.
+  for (const open of [
+    ".menu-toggle",
+    ".top-search",
+    ".top-ai",
+    ".topbar .basket-button",
+  ]) {
+    await scrollPage(page, -10000);
+    await headerShown(page, true);
+    await page.locator(open).click();
+    await scrollPage(page, 900);
+    expect(await page.evaluate(() => scrollY)).toBeGreaterThan(800);
+    await headerShown(page, true);
+    await page.keyboard.press("Escape");
+    await expect(page.locator(open)).toBeFocused();
+    await headerShown(page, true);
+  }
+  // A surface opened from the page while the header is hidden shows it.
+  await page.locator("#content").focus();
+  await scrollPage(page, -10000);
+  await page.mouse.wheel(0, 400);
+  await headerShown(page, false);
+  await page.locator('[data-product-id="4001"] .add').click();
+  await expect(page.locator(".size-picker")).toBeVisible();
+  await headerShown(page, true);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".size-picker")).toBeHidden();
+  await headerShown(page, true);
+  // A view change shows it.
+  await page.mouse.wheel(0, 400);
+  await headerShown(page, false);
+  await page.evaluate(() => (location.hash = "#catalogue?page=2&lang=ru"));
+  await expect(page.locator(".product-grid article")).toHaveCount(20);
+  await headerShown(page, true);
+  // Content loading into the new view and scripted scrolling are not the
+  // visitor's travel; the next own scroll input counts again.
+  await scrollPage(page, 800);
+  await headerShown(page, true);
+  await page.mouse.wheel(0, 300);
+  await headerShown(page, false);
+
+  // Reduced motion: no slide animation.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(bar).toHaveCSS("transition-duration", "0s");
+  await scrollPage(page, -10000);
+  await page.mouse.wheel(0, 600);
+  await headerShown(page, false);
+  await page.emulateMedia({ reducedMotion: null });
+
+  // Desktop: the top bar stays in the page flow and never hides.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(bar).not.toHaveAttribute("data-hidden");
+  await expect(bar).toHaveCSS("position", "static");
+  await scrollPage(page, -10000);
+  await page.mouse.wheel(0, 800);
+  await page.waitForFunction(() => scrollY > 500);
+  await frames(page);
+  await expect(bar).not.toHaveAttribute("data-hidden");
+  await expect(bar).toHaveCSS("transform", "none");
 });
 
 test("product page follows the Mini App: description, composition, disclaimer note, embedded video and recommended slider", async ({

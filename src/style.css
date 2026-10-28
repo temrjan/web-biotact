@@ -1116,16 +1116,11 @@ h3 {
     min-height: calc(var(--bt-control-min-height) - 2 * var(--bt-border-width));
   }
   /*
-   * A focused search field shows a thin green border along the rounded form
-   * instead of the offset rectangular ring (keyboard and mouse alike).
+   * The focused search field looks the same as unfocused: no outline and no
+   * border change; the text caret shows the focus. "Найти" and × keep the ring.
    */
-  @supports selector(:has(*)) {
-    .topbar .search:has(> input:focus) {
-      border-color: var(--bt-focus);
-    }
-    .topbar .search > input:focus-visible {
-      outline: none;
-    }
+  .topbar .search > input:focus-visible {
+    outline: none;
   }
   /*
    * Phones: the sticky top bar slides away on downward scroll and returns on

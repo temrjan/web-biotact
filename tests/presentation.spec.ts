@@ -63,20 +63,32 @@ async function productAddFocus(page: Page) {
   await expect(frame).toHaveCSS("outline-offset", "3px");
 }
 /**
- * Focused expanded phone search: a thin (1px) brand-green border on the
- * rounded form instead of the offset rectangular ring on the field.
+ * Focused expanded phone search (SF1): no outline and no border change on the
+ * field or its rounded form; it looks exactly as with focus elsewhere in the
+ * form ("Найти"), and the caret shows the focus.
  */
 async function searchFocus(page: Page) {
   const form = page.locator(".topbar .search"),
     input = form.locator("input");
+  const look = () =>
+    form.evaluate((n) => {
+      const s = getComputedStyle(n),
+        field = n.querySelector("input");
+      const i = field ? getComputedStyle(field) : null;
+      return {
+        border: [s.borderTop, s.borderRight, s.borderBottom, s.borderLeft],
+        outline: s.outlineStyle,
+        shadow: s.boxShadow,
+        field: [i?.outlineStyle, i?.borderTopStyle, i?.boxShadow],
+      };
+    });
   await expect(input).toBeFocused();
-  await expect(input).toHaveCSS("outline-style", "none");
-  for (const side of ["top", "right", "bottom", "left"]) {
-    await expect(form).toHaveCSS(`border-${side}-color`, "rgb(12, 61, 43)");
-    await expect(form).toHaveCSS(`border-${side}-width`, "1px");
-  }
-  // The border follows the rounded field (0.625rem: 10px, 12.5px at 125 %).
-  await expect(form).toHaveCSS("border-radius", /^(10|12\.5)px$/);
+  const focused = await look();
+  expect(focused.field[0]).toBe("none");
+  expect(focused.border[0]).toBe("1px solid rgb(196, 196, 196)");
+  await form.getByRole("button").focus();
+  expect(await look()).toEqual(focused);
+  await input.focus();
 }
 /** Choose a size with the product page size buttons (SZ1). */
 async function pickSize(page: Page, size: string) {
@@ -497,6 +509,8 @@ test("brand-green 2px keyboard focus remains visible on detail, fields and modal
     await page.locator(".top-search").focus();
     await page.keyboard.press("Enter");
     await searchFocus(page);
+    // "Найти" and × keep the site's keyboard ring.
+    await greenFocus(page.locator(".topbar .search button"));
     await greenFocus(page.locator(".search-close"));
     await page.keyboard.press("Escape");
     await expect(page.locator(".top-search")).toBeFocused();
@@ -2893,12 +2907,8 @@ test("phone header is one row of icons with in-place search; Account and RU/UZ m
   await expect(
     form.getByRole("textbox", { name: "Поиск товаров" }),
   ).toBeFocused();
-  // Mouse opening: the same thin green border along the rounded field.
+  // Mouse opening: no outline or border change on the focused field (SF1).
   await searchFocus(page);
-  // Focus on "Найти" instead: the field border returns to grey.
-  await form.getByRole("button").focus();
-  await expect(form).toHaveCSS("border-top-color", "rgb(196, 196, 196)");
-  await form.locator("input").focus();
   await expect(
     page.locator(".topbar .menu-toggle, .topbar .top-utilities"),
   ).toHaveCount(0);

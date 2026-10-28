@@ -62,6 +62,22 @@ async function productAddFocus(page: Page) {
   await expect(frame).toHaveCSS("outline-style", "solid");
   await expect(frame).toHaveCSS("outline-offset", "3px");
 }
+/**
+ * Focused expanded phone search: a thin (1px) brand-green border on the
+ * rounded form instead of the offset rectangular ring on the field.
+ */
+async function searchFocus(page: Page) {
+  const form = page.locator(".topbar .search"),
+    input = form.locator("input");
+  await expect(input).toBeFocused();
+  await expect(input).toHaveCSS("outline-style", "none");
+  for (const side of ["top", "right", "bottom", "left"]) {
+    await expect(form).toHaveCSS(`border-${side}-color`, "rgb(12, 61, 43)");
+    await expect(form).toHaveCSS(`border-${side}-width`, "1px");
+  }
+  // The border follows the rounded field (0.625rem: 10px, 12.5px at 125 %).
+  await expect(form).toHaveCSS("border-radius", /^(10|12\.5)px$/);
+}
 /** Choose a size with the product page size buttons (SZ1). */
 async function pickSize(page: Page, size: string) {
   const button = page
@@ -480,7 +496,7 @@ test("brand-green 2px keyboard focus remains visible on detail, fields and modal
       await greenFocus(page.locator(icon));
     await page.locator(".top-search").focus();
     await page.keyboard.press("Enter");
-    await greenFocus(page.locator(".search input"));
+    await searchFocus(page);
     await greenFocus(page.locator(".search-close"));
     await page.keyboard.press("Escape");
     await expect(page.locator(".top-search")).toBeFocused();
@@ -2875,6 +2891,12 @@ test("phone header is one row of icons with in-place search; Account and RU/UZ m
   await expect(
     form.getByRole("textbox", { name: "Поиск товаров" }),
   ).toBeFocused();
+  // Mouse opening: the same thin green border along the rounded field.
+  await searchFocus(page);
+  // Focus on "Найти" instead: the field border returns to grey.
+  await form.getByRole("button").focus();
+  await expect(form).toHaveCSS("border-top-color", "rgb(196, 196, 196)");
+  await form.locator("input").focus();
   await expect(
     page.locator(".topbar .menu-toggle, .topbar .top-utilities"),
   ).toHaveCount(0);

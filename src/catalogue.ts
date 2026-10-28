@@ -222,8 +222,12 @@ export async function detail(
   if (p.id !== id) throw new ReadError();
   return p;
 }
-/** All on-sale products in server order, as the Mini App home requests them. */
-export async function saleProducts(
+/**
+ * Every product matching the filter, in server order, read in pages of 100.
+ * A changed total, a duplicate or any failed page rejects the whole list.
+ */
+async function allProducts(
+  filter: Record<string, string>,
   lang: Language,
   signal: AbortSignal,
 ): Promise<Product[]> {
@@ -232,7 +236,7 @@ export async function saleProducts(
   let total: number | undefined;
   for (let n = 1; ; n++) {
     const q = new URLSearchParams({
-      on_sale: "true",
+      ...filter,
       page: String(n),
       size: "100",
     });
@@ -255,6 +259,21 @@ export async function saleProducts(
     }
     if (n === p.pages) return result;
   }
+}
+/** All on-sale products in server order, as the Mini App home requests them. */
+export function saleProducts(
+  lang: Language,
+  signal: AbortSignal,
+): Promise<Product[]> {
+  return allProducts({ on_sale: "true" }, lang, signal);
+}
+/** All products of one category in server order, for its home row. */
+export function categoryProducts(
+  lang: Language,
+  signal: AbortSignal,
+  categoryId: number,
+): Promise<Product[]> {
+  return allProducts({ category_id: String(categoryId) }, lang, signal);
 }
 export interface Banner {
   id: number;

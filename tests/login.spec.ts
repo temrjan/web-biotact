@@ -47,7 +47,8 @@ test("deliberate link/QR, reload, explicit approval, Club restore and logout pre
     "href",
     /^https:\/\/t.me\/synthetic_bot\?start=web_[0-9a-f]{32}$/,
   );
-  await expect(page.getByRole("img")).toBeVisible();
+  // The QR image; the logo images of the page are not part of this check.
+  await expect(page.getByRole("img", { name: /^QR-код/ })).toBeVisible();
   const id = await saved(page);
   await page.reload();
   await expect(

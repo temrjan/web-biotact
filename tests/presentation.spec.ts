@@ -36,6 +36,44 @@ async function greenFocus(control: Locator) {
   await expect(control).toHaveCSS("outline-width", "2px");
   await expect(control).toHaveCSS("outline-style", "solid");
 }
+/**
+ * Keyboard focus on the green product-page Add: the 2px brand-green ring sits
+ * outside the button on its rounded frame, because an inner ring would vanish
+ * on the green face.
+ */
+async function productAddFocus(page: Page) {
+  const frame = page.locator(".detail-purchase .card-action"),
+    add = frame.locator(".add");
+  // Reach the button by keyboard so :focus-visible applies after pointer input.
+  await add.focus();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Shift+Tab");
+  await expect(add).toBeFocused();
+  expect(await add.evaluate((e) => e.matches(":focus-visible"))).toBe(true);
+  await expect(add).toHaveCSS("outline-style", "none");
+  await expect(frame).toHaveCSS("outline-color", "rgb(12, 61, 43)");
+  await expect(frame).toHaveCSS("outline-width", "2px");
+  await expect(frame).toHaveCSS("outline-style", "solid");
+  await expect(frame).toHaveCSS("outline-offset", "3px");
+}
+/** The open basket survived a language-only history step and has no language buttons. */
+async function basketStaysOpen(page: Page) {
+  await expect(page.locator("dialog.basket-panel[open]")).toHaveCount(1);
+  await expect(page.locator(".basket-languages")).toHaveCount(0);
+}
+/**
+ * Language-only hash change of the current view (as a manual edit or a
+ * language link would make it) while the basket stays open.
+ */
+async function languageStep(page: Page, lang: "ru" | "uz") {
+  await page.evaluate((lang) => {
+    const [view, query] = location.hash.replace(/^#/, "").split("?");
+    const params = new URLSearchParams(query);
+    params.set("lang", lang);
+    location.hash = `#${view || "home"}?${params}`;
+  }, lang);
+  await basketStaysOpen(page);
+}
 
 test("Product detail shares nonsized Add, quantity and removal with list, header and basket in RU/UZ", async ({
   page,
@@ -200,7 +238,7 @@ test("brand-green 2px keyboard focus remains visible on detail, fields and modal
       choice = detail.getByRole("combobox");
     await greenFocus(choice);
     await choice.selectOption("L");
-    await greenFocus(detail.locator(".add"));
+    await productAddFocus(page);
     await page.keyboard.press("Enter");
     await greenFocus(detail.locator("[data-more]"));
     await expect(detail.locator("[data-more]")).toHaveCSS(
@@ -245,6 +283,172 @@ test("brand-green 2px keyboard focus remains visible on detail, fields and modal
   await page.keyboard.press("Tab");
   await greenFocus(page.locator(".account button"));
   await greenFocus(page.locator(".account a").first());
+});
+
+test("product page first Add is brand green, pale green while disabled; pressed state and every card stay neutral", async ({
+  page,
+}, testInfo) => {
+  await fixture(page);
+  await page.route("**/api/v1/consultant/turns", async (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({
+      json: {
+        request_id: body.request_id,
+        context_revision: body.context_revision,
+        language: "ru",
+        status: "answer",
+        answer: "CURRENT",
+        sources: [],
+        cautions: [],
+        products: [products[4]],
+        open_product_id: null,
+        context_token: "synthetic-token",
+        context_expires_at: new Date(Date.now() + 1800000).toISOString(),
+        commercial_checked_at: new Date().toISOString(),
+      },
+    });
+  });
+  const green = "rgb(12, 61, 43)",
+    white = "rgb(255, 255, 255)",
+    text = "rgb(46, 37, 33)",
+    transparent = "rgba(0, 0, 0, 0)";
+  /** Today's neutral card Add: rest, hover and pressed-down colours. */
+  async function neutralCard(add: Locator) {
+    await expect(add).toBeEnabled();
+    await expect(add).toHaveCSS("background-color", transparent);
+    await expect(add).toHaveCSS("color", text);
+    await add.hover();
+    await expect(add).toHaveCSS("background-color", "rgb(227, 227, 227)");
+    await page.mouse.down();
+    await expect(add).toHaveCSS("background-color", "rgb(216, 216, 216)");
+    // Release away from the button so the check does not add the product.
+    await page.mouse.move(0, 0);
+    await page.mouse.up();
+  }
+  for (const [width, lang, label] of [
+    [1440, "ru", "В корзину"],
+    [390, "uz", "Savatga"],
+  ] as const) {
+    await page.setViewportSize({ width, height: width > 1000 ? 1000 : 844 });
+    await page.goto(`/#product?id=4004&lang=${lang}`);
+    const detail = page.locator(".detail-purchase"),
+      frame = detail.locator(".card-action"),
+      add = detail.locator(".add");
+    await expect(add).toBeEnabled();
+    await expect(add).toHaveAccessibleName(new RegExp(`^${label}: `));
+    await expect(add).toHaveCSS("background-color", green);
+    await expect(add).toHaveCSS("color", white);
+    await expect(add.locator("svg")).toHaveCSS("color", white);
+    await add.hover();
+    await expect(add).toHaveCSS("background-color", "rgb(41, 84, 68)");
+    await page.mouse.down();
+    await expect(add).toHaveCSS("background-color", "rgb(11, 54, 38)");
+    await page.mouse.move(0, 0);
+    await page.mouse.up();
+    await expect(add).toHaveCSS("background-color", green);
+    await productAddFocus(page);
+    if (width === 1440)
+      await frame.screenshot({
+        path: testInfo.outputPath("product-add-focus-1440.png"),
+      });
+    // Cards on the product page itself keep today's look.
+    const recommended = page.locator(".product-recommended .add").first();
+    await neutralCard(recommended);
+    // Pressed state: unchanged quantity colours, focus moves to "+".
+    await add.click();
+    const more = detail.locator("[data-more]");
+    await expect(more).toBeFocused();
+    await expect(frame).toHaveCSS("background-color", "rgb(235, 235, 235)");
+    await expect(frame).toHaveCSS("outline-style", "none");
+    for (const control of await detail.locator(".quantity button").all()) {
+      await expect(control).toHaveCSS("background-color", transparent);
+      await expect(control).toHaveCSS("color", text);
+    }
+    await expect(detail.locator(".quantity output")).toHaveCSS("color", text);
+    await detail.locator(".quantity button").first().click();
+    await expect(add).toBeFocused();
+    await expect(page.locator(".basket-badge")).toHaveCount(0);
+    // Disabled first state (out of stock; a size not chosen yet): pale green.
+    for (const id of [4003, 4001]) {
+      await page.goto(`/#product?id=${id}&lang=${lang}`);
+      const disabled = page.locator(".detail-purchase .add");
+      await expect(disabled).toBeDisabled();
+      await expect(disabled).toHaveCSS("background-color", green);
+      await expect(disabled).toHaveCSS("opacity", "0.6");
+    }
+    await page.locator(".detail-purchase select").selectOption("L");
+    await expect(page.locator(".detail-purchase .add")).toBeEnabled();
+    await expect(page.locator(".detail-purchase .add")).toHaveCSS(
+      "opacity",
+      "1",
+    );
+  }
+  // Home row, catalogue grid and assistant cards keep today's look.
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/#home?lang=ru");
+  await neutralCard(
+    page.locator(`[data-category="product"] ${ordinaryCard} .add`),
+  );
+  await page.goto("/#catalogue?page=1&lang=ru");
+  await neutralCard(page.locator(`.product-grid ${ordinaryCard} .add`));
+  await page.goto("/#product?id=4004&lang=ru");
+  await page.locator(".sidebar .ai-nav").click();
+  const panel = page.locator(".assistant-panel");
+  await panel.getByRole("textbox").fill("card");
+  await panel.getByRole("textbox").press("Control+Enter");
+  await neutralCard(panel.locator(".assistant-cards .add").first());
+  await expect(page.locator(".detail-purchase .add")).toHaveCSS(
+    "background-color",
+    green,
+  );
+});
+
+test("logo image in the side menu, phone menu and Account is the BIOTACT link to Home", async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.route("**/api/v1/buyer/auth/**", (r) =>
+    r.fulfill({ status: 503, json: {} }),
+  );
+  async function logo(link: Locator, home: string) {
+    const image = link.locator("img");
+    await expect(link).toHaveAccessibleName("BIOTACT");
+    await expect(link).toHaveAttribute("href", home);
+    await expect(image).toHaveAttribute("alt", "BIOTACT");
+    // Explicit dimensions reserve the space before the file loads.
+    await expect(image).toHaveAttribute("width", "351");
+    await expect(image).toHaveAttribute("height", "125");
+    await expect
+      .poll(() =>
+        image.evaluate((i: HTMLImageElement) =>
+          i.complete ? i.naturalWidth : 0,
+        ),
+      )
+      .toBeGreaterThan(0);
+    const box = await image.boundingBox();
+    expect(box?.width).toBeCloseTo(184, 0);
+    expect((box?.width || 0) / (box?.height || 1)).toBeCloseTo(
+      351.4 / 125.1,
+      1,
+    );
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/#catalogue?page=1&lang=uz");
+  const side = page.locator(".sidebar .brand");
+  await logo(side, "/#home?lang=uz");
+  await side.click();
+  await expect(page).toHaveURL(/#home\?lang=uz$/);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/#catalogue?page=1&lang=ru");
+  await page.locator(".menu-toggle").click();
+  const drawer = page.locator(".drawer .brand");
+  await logo(drawer, "/#home?lang=ru");
+  await drawer.click();
+  await expect(page).toHaveURL(/#home\?lang=ru$/);
+  await expect(page.locator(".drawer")).not.toBeVisible();
+  await page.goto("/#account?lang=ru");
+  await expect(page.locator(".account")).toBeVisible();
+  await logo(page.locator(".account .brand"), "/#home?lang=ru");
 });
 
 test("accepted footer colors, size variants, availability and remembered basket share quantities without purchase requests", async ({
@@ -415,7 +619,7 @@ test("accepted footer colors, size variants, availability and remembered basket 
   ).toBe(true);
   await page.locator(".sidebar .brand").click();
   await expect(page.locator('[data-category="product"] article')).toHaveCount(
-    8,
+    40,
   );
   const selected = page.locator('.sidebar a[aria-current="page"]');
   await selected.hover();
@@ -430,7 +634,7 @@ test("accepted footer colors, size variants, availability and remembered basket 
   await expect(page.locator(".basket-badge")).toHaveText("1");
   await page.reload();
   await expect(page.locator('[data-category="product"] article')).toHaveCount(
-    8,
+    40,
   );
   await expect(page.locator(".basket-badge")).toHaveText("1");
 });
@@ -604,7 +808,7 @@ test("AI draft stays local until explicit send and resets on semantic navigation
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/");
   await expect(page.locator('[data-category="product"] article')).toHaveCount(
-    8,
+    40,
   );
   await page.locator(".sidebar .ai-nav").click();
   await dialogCount(page, 1);
@@ -689,7 +893,7 @@ test("AI adapts at 1440/1000/390/320 and enlarged text, modal focus/resize/menu/
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/");
     const row = page.locator('[data-category="product"] .product-row');
-    await expect(row.locator("article")).toHaveCount(8);
+    await expect(row.locator("article")).toHaveCount(40);
     expect(await visibleCards(row)).toBe(width >= 1000 ? 4 : 2);
     await page.locator(width >= 1000 ? ".sidebar .ai-nav" : ".top-ai").click();
     await dialogCount(page, 1);
@@ -951,7 +1155,7 @@ test("banner edges and dots wrap, crossfade whole slides and keep keyboard focus
   f.banners = [];
   await page.goto("/#home?lang=ru");
   await expect(page.locator('[data-category="product"] article')).toHaveCount(
-    8,
+    40,
   );
   await expect(page.locator(".hero, .hero-loading")).toHaveCount(0);
   await page.route("**/api/v1/banners?*", (route) =>
@@ -959,7 +1163,7 @@ test("banner edges and dots wrap, crossfade whole slides and keep keyboard focus
   );
   await page.goto("/#home?lang=uz");
   await expect(page.locator('[data-category="product"] article')).toHaveCount(
-    8,
+    40,
   );
   await expect(page.locator(".hero, .hero-loading")).toHaveCount(0);
   await expect(page.locator("main [role=alert]")).toHaveCount(0);
@@ -1155,7 +1359,7 @@ test("Home sections: sale, Mini App category rows, lazy video, FAQ accordion, co
   ).toBe(true);
   expect(
     requests.some((r) =>
-      r.includes("/api/v1/products?page=1&size=8&category_id=301"),
+      r.includes("/api/v1/products?category_id=301&page=1&size=100"),
     ),
   ).toBe(true);
   await sale.locator(firstCard + " .add").click();
@@ -1265,6 +1469,27 @@ test("Home sections: sale, Mini App category rows, lazy video, FAQ accordion, co
   ).toHaveAttribute("href", "mailto:contact_uz@biotact.de");
   await expect(footer).toContainText("Siemensstraße 10");
   await expect(footer).toContainText("53121 Bonn, Deutschland");
+  // Bottom row: copyright on the left, developer credit on the right.
+  const bottom = footer.locator(".footer-bottom > p");
+  const year = new Date().getFullYear();
+  await expect(bottom).toHaveText([
+    `© ${year} ООО "Biotact"`,
+    "Разработка сайта — temrjan.com",
+  ]);
+  const credit = footer.getByRole("link", { name: "temrjan.com", exact: true });
+  await expect(credit).toHaveAttribute("href", "https://temrjan.com");
+  await expect(credit).toHaveAttribute("target", "_blank");
+  await expect(credit).toHaveAttribute("rel", "noopener noreferrer");
+  const footerBox = await footer.boundingBox(),
+    copyrightBox = await bottom.first().boundingBox(),
+    creditBox = await bottom.last().boundingBox();
+  if (!footerBox || !copyrightBox || !creditBox)
+    throw new Error("Missing footer bottom row");
+  expect(Math.abs(copyrightBox.x - footerBox.x)).toBeLessThan(1);
+  expect(
+    Math.abs(creditBox.x + creditBox.width - (footerBox.x + footerBox.width)),
+  ).toBeLessThan(1);
+  expect(Math.abs(copyrightBox.y - creditBox.y)).toBeLessThan(1);
   await expect(
     footer.getByRole("link", { name: "kontakt@biotact.de" }),
   ).toHaveAttribute("href", "mailto:kontakt@biotact.de");
@@ -1276,7 +1501,7 @@ test("Home sections: sale, Mini App category rows, lazy video, FAQ accordion, co
   await page.locator('.languages [lang="uz"]').click();
   await expect(sale.locator("h2")).toHaveText("Aksiyalar");
   await expect(page.locator('[data-category="product"] h2')).toHaveText(
-    "Mashhur mahsulotlar",
+    "Nutriyentlar API",
   );
   await expect(
     page.locator('[data-category="product"] .section-head a'),
@@ -1310,17 +1535,35 @@ test("Home sections: sale, Mini App category rows, lazy video, FAQ accordion, co
     "Nutriyentlar API",
   );
   await expect(page.locator(".page-footer")).toContainText("Toshkent shahri");
+  await expect(page.locator(".footer-bottom > p")).toHaveText([
+    `© ${year} ООО "Biotact"`,
+    "Sayt ishlab chiqilgan: temrjan.com",
+  ]);
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/#home?lang=uz");
     await expect(page.locator('[data-category="product"] article')).toHaveCount(
-      8,
+      40,
     );
     for (const font of ["", "125%"]) {
       await page.evaluate((size) => {
         document.documentElement.style.fontSize = size;
       }, font);
       await noOverflow(page);
+      // The bottom footer row wraps inside the footer.
+      expect(
+        await page
+          .locator(".footer-bottom")
+          .evaluate((row) =>
+            [...row.children].every(
+              (c) =>
+                c.getBoundingClientRect().left >=
+                  row.getBoundingClientRect().left - 1 &&
+                c.getBoundingClientRect().right <=
+                  row.getBoundingClientRect().right + 1,
+            ),
+          ),
+      ).toBe(true);
     }
     await page.evaluate(() => {
       document.documentElement.style.fontSize = "";
@@ -1522,7 +1765,7 @@ test("guest validation, local review, draft lifetime and privacy cross the actua
   await page
     .getByRole("button", { name: "Назад к данным", exact: true })
     .click();
-  await page.locator('.basket-languages [lang="uz"]').click();
+  await languageStep(page, "uz");
   await expect(page.getByLabel("Ism", { exact: true })).toHaveValue(
     details.name,
   );
@@ -1532,6 +1775,9 @@ test("guest validation, local review, draft lifetime and privacy cross the actua
     await page.evaluate(
       () => (document.documentElement.style.fontSize = "125%"),
     );
+    await expect(
+      page.locator(".basket-panel").getByRole("button", { name: /^(RU|UZ)$/ }),
+    ).toHaveCount(0);
     await page.keyboard.press("Tab");
     await greenFocus(page.getByLabel("Yetkazib berish manzili"));
     await noOverflow(page);
@@ -1545,13 +1791,15 @@ test("guest validation, local review, draft lifetime and privacy cross the actua
   await expect(page.locator(".guest-review")).toContainText(details.name);
   await noOverflow(page);
   // Both translations are cached now; changing the resolved projection still invalidates review.
-  await page.locator('.basket-languages [lang="ru"]').click();
+  // Back returns to the same view in Russian.
+  await page.goBack();
+  await basketStaysOpen(page);
   await expect(page.locator(".guest-review")).toHaveCount(0);
   await expect(name).toHaveValue(details.name);
   await page
     .getByRole("button", { name: "Проверить данные", exact: true })
     .click();
-  await page.locator('.basket-languages [lang="uz"]').click();
+  await languageStep(page, "uz");
   await expect(page.locator(".guest-review")).toHaveCount(0);
   await expect(page.getByLabel("Ism", { exact: true })).toHaveValue(
     details.name,
@@ -1744,7 +1992,7 @@ test("late public reads cannot resurrect removals, undo quantities or apply a pr
   await page.reload();
   await expect.poll(() => held.length).toBe(3);
   await page.locator(".basket-button").click();
-  await page.locator('.basket-languages [lang="uz"]').click();
+  await languageStep(page, "uz");
   await expect(page.locator(".basket-name")).toHaveText("Fresh UZ result");
   await held[2]?.();
   await expect(page.locator(".basket-name")).toHaveText("Fresh UZ result");
@@ -1760,7 +2008,7 @@ test("Home rows scroll with header arrows and no scrollbar; catalogue tabs read 
   await page.goto("/");
   const popular = page.locator('[data-category="product"]');
   const row = popular.locator(".product-row");
-  await expect(row.locator("article")).toHaveCount(8);
+  await expect(row.locator("article")).toHaveCount(40);
   await expect(row).toHaveCSS("scrollbar-width", "none");
   expect(
     await row.evaluate((n) => (n as HTMLElement).offsetHeight - n.clientHeight),
@@ -1779,8 +2027,8 @@ test("Home rows scroll with header arrows and no scrollbar; catalogue tabs read 
   expect(await row.evaluate((n) => n.scrollLeft)).toBe(0);
   await next.click();
   await expect.poll(() => row.evaluate((n) => n.scrollLeft)).toBeGreaterThan(0);
-  // Four of eight cards are visible: one step reaches the end.
-  await expect(next).toBeDisabled();
+  // Four of forty cards are visible: one step shows the next four.
+  await expect(next).toBeEnabled();
   await expect(previous).toBeEnabled();
   await expect.poll(() => visibleCards(row)).toBe(4);
   await expect(row.locator('[data-product-id="4005"]')).toBeInViewport();
@@ -1790,6 +2038,17 @@ test("Home rows scroll with header arrows and no scrollbar; catalogue tabs read 
   // Swiping/trackpad scrolling still works and updates the arrows.
   await row.evaluate((n) => n.scrollBy({ left: 400 }));
   await expect(previous).toBeEnabled();
+  // The arrows reach the last product of the category.
+  await row.evaluate((n) => n.scrollTo({ left: 0 }));
+  await expect(previous).toBeDisabled();
+  for (let step = 1; step <= 9; step++) {
+    await next.click();
+    await expect(
+      row.locator(`[data-product-id="${4004 + step * 4}"]`),
+    ).toBeInViewport();
+  }
+  await expect(next).toBeDisabled();
+  await expect(row.locator('[data-product-id="4040"]')).toBeInViewport();
   // The single sale product does not overflow: no arrows, no "view all".
   const sale = page.locator('[data-category="sale"]');
   await expect(sale.locator(".slider-arrow")).toHaveCount(0);
@@ -1818,7 +2077,7 @@ test("Home rows scroll with header arrows and no scrollbar; catalogue tabs read 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/#home?lang=uz");
   const compact = page.locator('[data-category="product"]');
-  await expect(compact.locator("article")).toHaveCount(8);
+  await expect(compact.locator("article")).toHaveCount(40);
   await expect(
     compact.getByRole("button", { name: "Keyingi mahsulotlar" }),
   ).toBeEnabled();

@@ -25,6 +25,7 @@ import Basket, {
 import * as api from "./catalogue";
 import { useGuestBasket } from "./guestBasket";
 import { href, parseLocation, type Location } from "./navigation";
+import logoUrl from "./assets/logo-biotact.svg";
 
 const copy = {
   ru: {
@@ -39,7 +40,6 @@ const copy = {
     retry: "Повторить",
     empty: "Товары не найдены",
     unavailable: "Категория недоступна",
-    popular: "Популярные товары",
     viewAll: "Смотреть все",
     sales: "Акции",
     details: "Подробнее о товаре",
@@ -91,7 +91,6 @@ const copy = {
     retry: "Qayta urinish",
     empty: "Mahsulotlar topilmadi",
     unavailable: "Turkum mavjud emas",
-    popular: "Mashhur mahsulotlar",
     viewAll: "Hammasini ko'rish",
     sales: "Aksiyalar",
     details: "Mahsulot haqida batafsil",
@@ -195,15 +194,22 @@ function Image({
   src,
   name,
   lang,
+  lazy = false,
 }: {
   src: string | null;
   name: string;
   lang: api.Language;
+  lazy?: boolean;
 }) {
   const [failed, setFailed] = useState<string | null>(null);
   const safe = api.safeMedia(src);
   return safe && failed !== safe ? (
-    <img src={safe} alt={name} onError={() => setFailed(safe)} />
+    <img
+      src={safe}
+      alt={name}
+      loading={lazy ? "lazy" : undefined}
+      onError={() => setFailed(safe)}
+    />
   ) : (
     <span
       className="image-fallback"
@@ -263,10 +269,12 @@ function Card({
   change,
   chooseSize,
   disabled = false,
+  lazy = false,
 }: CardPurchases & {
   product: api.Product;
   lang: api.Language;
   disabled?: boolean;
+  lazy?: boolean;
 }) {
   const target = href({ view: "product", lang, page: 1, id: product.id });
   const [selectedSize, setSelectedSize] = useState("");
@@ -291,6 +299,7 @@ function Card({
           src={product.image_url || product.images[0] || null}
           name={product.name}
           lang={lang}
+          lazy={lazy}
         />
       </a>
       <div className="card-copy">
@@ -463,11 +472,13 @@ function ProductRow({
   chooseSize,
   id,
   rowRef,
+  lazy = false,
 }: CardPurchases & {
   products: api.Product[];
   lang: api.Language;
   id: string;
   rowRef: (node: HTMLDivElement | null) => void;
+  lazy?: boolean;
 }) {
   return (
     <div className="product-row" id={id} ref={rowRef}>
@@ -479,6 +490,7 @@ function ProductRow({
           lines={lines}
           change={change}
           chooseSize={chooseSize}
+          lazy={lazy}
         />
       ))}
     </div>
@@ -496,13 +508,13 @@ function CategoryRow({
   title: string;
   lang: api.Language;
 }) {
+  // Swiping a home row must reach every product of its category.
   const read = useRead(`${lang}:${category.id}`, (s) =>
-    api.products(lang, s, 1, 8, category.id),
+    api.categoryProducts(lang, s, category.id),
   );
   const slider = useSlider();
   // The Mini App hides a category section without products.
-  if (read.result.status === "ready" && !read.result.data.items.length)
-    return null;
+  if (read.result.status === "ready" && !read.result.data.length) return null;
   const id = `home-${category.slug}`;
   return (
     <section
@@ -529,11 +541,12 @@ function CategoryRow({
           <ProductRow
             id={`${id}-row`}
             rowRef={slider.attach}
-            products={read.result.data.items}
+            products={read.result.data}
             lang={lang}
             lines={lines}
             change={change}
             chooseSize={chooseSize}
+            lazy
           />
         )}
       </State>
@@ -605,13 +618,13 @@ function Home({
         </section>
       )}
       <State result={categories} lang={lang} retry={retry}>
-        {slugs.map((slug, i) => {
+        {slugs.map((slug) => {
           const c = ready.find((item) => item.slug === slug);
           return c ? (
             <CategoryRow
               key={slug}
               category={c}
-              title={i === 0 ? t.popular : c.name}
+              title={c.name}
               lang={lang}
               lines={lines}
               change={change}
@@ -1226,7 +1239,13 @@ export default function App() {
         className="brand"
         href={href({ view: "home", lang: loc.lang, page: 1 })}
       >
-        BIOTACT
+        <img
+          className="brand-logo"
+          src={logoUrl}
+          alt="BIOTACT"
+          width={351}
+          height={125}
+        />
       </a>
       <nav className="nav-primary" aria-label={t.menu}>
         <a
@@ -1466,9 +1485,6 @@ export default function App() {
           retry={basket.retry}
           notice={basket.notice}
           revision={basket.revision + basketLanguageRevision}
-          onLanguage={(lang) => {
-            window.location.assign(href({ ...loc, lang }));
-          }}
           dialogRef={basketDialog}
           onClose={() => {
             if (surface === "basket") dismiss();

@@ -85,6 +85,7 @@ const copy = {
       "МФЙ «Шарк хакикати», улица Янгикурган, 1-й тупик, дом 90",
     ],
     contacts: "Контакты",
+    credit: "Разработка сайта —",
   },
   uz: {
     video: "Probiotiklar va vitamin-mineral komplekslar",
@@ -103,6 +104,7 @@ const copy = {
       "Sharq haqiqati MFY, Yangiqo'rg'on ko'chasi, 1-tor ko'cha, 90-uy",
     ],
     contacts: "Kontaktlar",
+    credit: "Sayt ishlab chiqilgan:",
   },
 };
 
@@ -262,7 +264,7 @@ export function Consultation({ lang }: { lang: Language }) {
   );
 }
 
-/** Mini App footer contacts with the current Uzbekistan address. */
+/** Mini App footer contacts with the current Uzbekistan address, then copyright and credit. */
 export function CompanyFooter({ lang }: { lang: Language }) {
   const t = copy[lang];
   return (
@@ -292,6 +294,19 @@ export function CompanyFooter({ lang }: { lang: Language }) {
             E-Mail: <a href="mailto:kontakt@biotact.de">kontakt@biotact.de</a>
           </p>
         </section>
+      </div>
+      <div className="footer-bottom">
+        <p>© {new Date().getFullYear()} ООО "Biotact"</p>
+        <p>
+          {t.credit}{" "}
+          <a
+            href="https://temrjan.com"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            temrjan.com
+          </a>
+        </p>
       </div>
     </footer>
   );

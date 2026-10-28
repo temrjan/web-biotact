@@ -211,7 +211,6 @@ export default function Basket({
   retry,
   notice,
   revision,
-  onLanguage,
   dialogRef,
   onClose,
   onKeyDown,
@@ -223,7 +222,6 @@ export default function Basket({
   retry: (id: number) => void;
   notice: "invalid" | "unavailable" | null;
   revision: number;
-  onLanguage: (lang: Language) => void;
   dialogRef: RefObject<HTMLDialogElement | null>;
   onClose: () => void;
   onKeyDown: KeyboardEventHandler<HTMLDialogElement>;
@@ -300,22 +298,6 @@ export default function Basket({
           onClick={onClose}
         >
           ×
-        </button>
-      </div>
-      <div className="basket-languages" aria-label="Language">
-        <button
-          lang="ru"
-          aria-pressed={lang === "ru"}
-          onClick={() => onLanguage("ru")}
-        >
-          RU
-        </button>
-        <button
-          lang="uz"
-          aria-pressed={lang === "uz"}
-          onClick={() => onLanguage("uz")}
-        >
-          UZ
         </button>
       </div>
       <p className="basket-note" id="basket-note">

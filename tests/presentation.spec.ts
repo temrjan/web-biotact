@@ -2662,10 +2662,17 @@ test("basket sits in the side menu on desktop and in the phone top bar that retu
   await page.mouse.wheel(0, 1600);
   await page.waitForFunction(() => scrollY > 1000);
   await headerShown(page, false);
+  // Bring the card into view first: a scroll made by the click itself would
+  // be a downward scroll after the visitor's input and hide the bar again.
+  const added = page.locator('.product-grid [data-product-id="4019"] .add');
+  await added.evaluate((n) => n.scrollIntoView({ block: "center" }));
   await page.mouse.wheel(0, -200);
   await headerShown(page, true);
   await expect(page.locator(".topbar")).toHaveCSS("position", "sticky");
-  await page.locator('.product-grid [data-product-id="4019"] .add').click();
+  const before = await page.evaluate(() => scrollY);
+  await added.click();
+  expect(await page.evaluate(() => scrollY)).toBe(before);
+  await headerShown(page, true);
   await expect(topBasket.locator(".basket-badge")).toHaveText("2");
   await expect(topBasket).toBeInViewport();
   // The returned sticky bar stays above cards and their sale badges.

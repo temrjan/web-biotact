@@ -75,6 +75,106 @@ async function languageStep(page: Page, lang: "ru" | "uz") {
   await basketStaysOpen(page);
 }
 
+/**
+ * The row control copies the basket stepper frame (`.basket-quantity`):
+ * 1px #c4c4c4 border, #ebebeb face, 10px radius and 44px rows; arrow-only
+ * rows have two 44px cells.
+ */
+async function stepperFrame(control: Locator, cells: string[]) {
+  expect(
+    await control.evaluate((n) => {
+      const s = getComputedStyle(n);
+      return [s.borderTop, s.borderBottom, s.borderLeft, s.borderRight].concat(
+        s.backgroundColor,
+        s.borderRadius,
+        s.overflow,
+        String(n.getBoundingClientRect().height),
+      );
+    }),
+  ).toEqual([
+    "1px solid rgb(196, 196, 196)",
+    "1px solid rgb(196, 196, 196)",
+    "1px solid rgb(196, 196, 196)",
+    "1px solid rgb(196, 196, 196)",
+    "rgb(235, 235, 235)",
+    "10px",
+    "hidden",
+    "46",
+  ]);
+  const children = control.locator(":scope > *");
+  expect(
+    await children.evaluateAll((nodes) =>
+      nodes.map((n) => n.getAttribute("aria-label")),
+    ),
+  ).toEqual(cells);
+  for (const child of await children.all()) {
+    expect((await child.boundingBox())?.height).toBe(44);
+    await expect(child).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await expect(child).toHaveCSS("color", "rgb(46, 37, 33)");
+  }
+}
+/**
+ * Offset of an arrow's drawn chevron (its rasterised ink, not its DOM box)
+ * from the centre of the arrow button, in CSS pixels.
+ */
+async function chevronInkOffset(arrow: Locator) {
+  return arrow.evaluate(async (button) => {
+    const svg = button.querySelector("svg");
+    if (!svg || button.textContent?.trim()) return null;
+    const box = svg.getBoundingClientRect(),
+      frame = button.getBoundingClientRect(),
+      scale = 8,
+      width = Math.round(box.width * scale),
+      height = Math.round(box.height * scale);
+    const copy = svg.cloneNode(true) as SVGSVGElement;
+    copy.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    copy.setAttribute("width", String(width));
+    copy.setAttribute("height", String(height));
+    copy.setAttribute("stroke", "#000");
+    const image = new Image();
+    image.src =
+      "data:image/svg+xml;charset=utf-8," +
+      encodeURIComponent(new XMLSerializer().serializeToString(copy));
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    context.drawImage(image, 0, 0);
+    const { data } = context.getImageData(0, 0, width, height);
+    let left = width,
+      right = -1,
+      top = height,
+      bottom = -1;
+    for (let y = 0; y < height; y++)
+      for (let x = 0; x < width; x++)
+        if ((data[(y * width + x) * 4 + 3] ?? 0) > 0) {
+          left = Math.min(left, x);
+          right = Math.max(right, x);
+          top = Math.min(top, y);
+          bottom = Math.max(bottom, y);
+        }
+    if (right < 0) return null;
+    return {
+      x:
+        box.left +
+        (left + right + 1) / 2 / scale -
+        (frame.left + frame.width / 2),
+      y:
+        box.top +
+        (top + bottom + 1) / 2 / scale -
+        (frame.top + frame.height / 2),
+    };
+  });
+}
+async function chevronCentred(arrow: Locator) {
+  const offset = await chevronInkOffset(arrow);
+  expect(offset).not.toBeNull();
+  expect(Math.abs(offset?.x ?? Infinity)).toBeLessThanOrEqual(1);
+  expect(Math.abs(offset?.y ?? Infinity)).toBeLessThanOrEqual(1);
+}
+
 test("Product detail shares nonsized Add, quantity and removal with list, header and basket in RU/UZ", async ({
   page,
 }) => {
@@ -1505,7 +1605,7 @@ test("Home sections: sale, Mini App category rows, lazy video, FAQ accordion, co
   );
   await expect(
     page.locator('[data-category="product"] .section-head a'),
-  ).toHaveText("Hammasini ko'rish");
+  ).toHaveText("Hammasi");
   await expect(video.locator("h2")).toHaveText(
     "Probiotiklar va vitamin-mineral komplekslar",
   );
@@ -1999,7 +2099,7 @@ test("late public reads cannot resurrect removals, undo quantities or apply a pr
   await expect(page.locator(".basket-panel output")).toHaveText("3");
 });
 
-test("Home rows scroll with header arrows and no scrollbar; catalogue tabs read as headings without the search note", async ({
+test("Home rows scroll with one stepper-style row control and no scrollbar; catalogue tabs read as headings without the search note", async ({
   page,
 }) => {
   await fixture(page);
@@ -2013,15 +2113,47 @@ test("Home rows scroll with header arrows and no scrollbar; catalogue tabs read 
   expect(
     await row.evaluate((n) => (n as HTMLElement).offsetHeight - n.clientHeight),
   ).toBe(0);
-  const previous = popular.getByRole("button", { name: "Предыдущие товары" });
-  const next = popular.getByRole("button", { name: "Следующие товары" });
-  await expect(
-    popular.locator(".section-head .slider-controls > *"),
-  ).toHaveCount(3);
-  await expect(popular.locator(".view-all")).toHaveText("Смотреть все");
-  await expect(next).toHaveAttribute("aria-controls", "home-product-row");
+  // One control instead of two arrows and a pill: [‹] Все [›] in the basket stepper frame.
+  const control = popular.locator(".section-head .slider-controls");
+  await expect(control).toHaveCount(1);
+  await stepperFrame(control, [
+    "Предыдущие товары",
+    "Все: Нутриенты",
+    "Следующие товары",
+  ]);
+  const previous = control.getByRole("button", { name: "Предыдущие товары" });
+  const next = control.getByRole("button", { name: "Следующие товары" });
+  const all = control.getByRole("link", { name: "Все: Нутриенты" });
+  await expect(all).toHaveText("Все");
+  await expect(all).toHaveCSS("font-size", "17px");
+  await expect(all).toHaveCSS("font-weight", "700");
+  await expect(all).toHaveAttribute(
+    "href",
+    "/#catalogue?category=301&page=1&lang=ru",
+  );
+  // Vector chevrons centred by the button (R2), not text glyphs.
+  for (const arrow of [previous, next]) {
+    await expect(arrow).toHaveAttribute("aria-controls", "home-product-row");
+    await expect(arrow.locator("svg")).toHaveCount(1);
+    expect((await arrow.boundingBox())?.width).toBe(44);
+    await chevronCentred(arrow);
+  }
   await expect(previous).toBeDisabled();
   await expect(next).toBeEnabled();
+  // The end arrow stays focusable with a solid inner ring; only its chevron fades.
+  await keyboardFocus(previous);
+  await expect(previous).toHaveCSS("outline-offset", "-5px");
+  await expect(previous).toHaveCSS("opacity", "1");
+  await expect(previous.locator("svg")).toHaveCSS("opacity", "0.4");
+  await expect(next.locator("svg")).toHaveCSS("opacity", "1");
+  await keyboardFocus(all);
+  await expect(all).toHaveCSS("outline-offset", "-5px");
+  await previous.hover();
+  await expect(previous).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await next.hover();
+  await expect(next).toHaveCSS("background-color", "rgb(224, 224, 224)");
+  await all.hover();
+  await expect(all).toHaveCSS("background-color", "rgb(224, 224, 224)");
   // A disabled arrow does nothing.
   await previous.click({ force: true });
   expect(await row.evaluate((n) => n.scrollLeft)).toBe(0);
@@ -2030,6 +2162,7 @@ test("Home rows scroll with header arrows and no scrollbar; catalogue tabs read 
   // Four of forty cards are visible: one step shows the next four.
   await expect(next).toBeEnabled();
   await expect(previous).toBeEnabled();
+  await expect(previous.locator("svg")).toHaveCSS("opacity", "1");
   await expect.poll(() => visibleCards(row)).toBe(4);
   await expect(row.locator('[data-product-id="4005"]')).toBeInViewport();
   await previous.click();
@@ -2048,12 +2181,19 @@ test("Home rows scroll with header arrows and no scrollbar; catalogue tabs read 
     ).toBeInViewport();
   }
   await expect(next).toBeDisabled();
+  await expect(next.locator("svg")).toHaveCSS("opacity", "0.4");
   await expect(row.locator('[data-product-id="4040"]')).toBeInViewport();
-  // The single sale product does not overflow: no arrows, no "view all".
-  const sale = page.locator('[data-category="sale"]');
-  await expect(sale.locator(".slider-arrow")).toHaveCount(0);
+  // The sale row has the same frame with arrows only; its single product
+  // does not overflow, so both arrows are at an end.
+  const sale = page.locator('[data-category="sale"] .slider-controls');
+  await stepperFrame(sale, ["Предыдущие товары", "Следующие товары"]);
   await expect(sale.locator(".view-all")).toHaveCount(0);
-  await popular.locator(".view-all").click();
+  for (const arrow of await sale.getByRole("button").all()) {
+    await expect(arrow).toHaveAttribute("aria-controls", "home-sale-row");
+    await expect(arrow).toBeDisabled();
+    await chevronCentred(arrow);
+  }
+  await all.click();
   await expect(page).toHaveURL(/#catalogue\?category=301&page=1&lang=ru$/);
 
   const tabs = page.locator(".filter-row a");
@@ -2078,13 +2218,23 @@ test("Home rows scroll with header arrows and no scrollbar; catalogue tabs read 
   await page.goto("/#home?lang=uz");
   const compact = page.locator('[data-category="product"]');
   await expect(compact.locator("article")).toHaveCount(40);
+  const compactControl = compact.locator(".slider-controls");
+  await stepperFrame(compactControl, [
+    "Oldingi mahsulotlar",
+    "Hammasi: Nutriyentlar API",
+    "Keyingi mahsulotlar",
+  ]);
   await expect(
-    compact.getByRole("button", { name: "Keyingi mahsulotlar" }),
+    compactControl.getByRole("button", { name: "Keyingi mahsulotlar" }),
   ).toBeEnabled();
   await expect(
-    compact.getByRole("button", { name: "Oldingi mahsulotlar" }),
+    compactControl.getByRole("button", { name: "Oldingi mahsulotlar" }),
   ).toBeDisabled();
-  await expect(compact.locator(".view-all")).toHaveText("Hammasini ko'rish");
+  await expect(
+    compactControl.getByRole("link", { name: "Hammasi: Nutriyentlar API" }),
+  ).toHaveText("Hammasi");
+  for (const arrow of await compactControl.getByRole("button").all())
+    await chevronCentred(arrow);
   await noOverflow(page);
 });
 
@@ -2290,13 +2440,25 @@ test("product page follows the Mini App: description, composition, disclaimer no
   const previous = recommended.getByRole("button", {
     name: "Предыдущие товары",
   });
+  // Same stepper frame as the home rows, arrows only.
+  await stepperFrame(recommended.locator(".slider-controls"), [
+    "Предыдущие товары",
+    "Следующие товары",
+  ]);
+  await expect(recommended.locator(".view-all")).toHaveCount(0);
+  for (const arrow of [previous, next]) {
+    await expect(arrow).toHaveAttribute(
+      "aria-controls",
+      "product-recommended-row",
+    );
+    await chevronCentred(arrow);
+  }
   await expect(previous).toBeDisabled();
   await next.click();
   await expect(next).toBeDisabled();
   await expect(previous).toBeEnabled();
   await previous.click();
   await expect(previous).toBeDisabled();
-  await expect(recommended.locator(".view-all")).toHaveCount(0);
   const card = recommended.locator(ordinaryCard);
   await expect(card.locator(".price strong")).toContainText(/112\s?233,44 UZS/);
   await card.locator(".add").click();

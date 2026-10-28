@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import * as api from "./api";
 import type { Language } from "./catalogue";
+import logoUrl from "./assets/logo-biotact.svg";
 
 /** Notice key rendered in the current page language; never shown as text. */
 const TELEGRAM_UNAVAILABLE = "telegram_unavailable";
@@ -354,7 +355,13 @@ export default function Account({ lang }: { lang: Language }) {
   return (
     <div className="account">
       <a className="brand" href="/#home?lang=ru">
-        BIOTACT
+        <img
+          className="brand-logo"
+          src={logoUrl}
+          alt="BIOTACT"
+          width={351}
+          height={125}
+        />
       </a>
       <section>
         <p className="eyebrow">Ваш Biotact Club</p>

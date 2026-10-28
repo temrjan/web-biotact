@@ -101,6 +101,12 @@ h3 {
   letter-spacing: 0.04em;
   text-decoration: none;
 }
+.brand-logo {
+  display: block;
+  width: 11.5rem;
+  max-width: 100%;
+  height: auto;
+}
 .nav-primary {
   display: grid;
   gap: 0.5rem;
@@ -624,6 +630,30 @@ h3 {
   border-radius: var(--bt-radius-control);
   overflow: hidden;
 }
+/* Product page only: the first "add to basket" state is brand green; while
+   disabled it keeps the green under the shared disabled opacity. Cards and
+   the pressed quantity state keep their neutral look. */
+.detail-purchase .add {
+  background: var(--bt-action);
+  color: var(--bt-text-inverse);
+}
+.detail-purchase .add:hover:enabled {
+  background: var(--bt-action-hover);
+}
+.detail-purchase .add:active:enabled {
+  background: var(--bt-action-active);
+}
+/* The inner ring would vanish on the green face and an outer one is clipped
+   by the rounded frame, so the frame carries the ring instead. */
+@supports selector(:has(*)) {
+  .detail-purchase .card-action:has(> .add:focus-visible) {
+    outline: var(--bt-focus-width) solid var(--bt-focus);
+    outline-offset: var(--bt-focus-offset);
+  }
+  .detail-purchase .add:focus-visible {
+    outline: none;
+  }
+}
 .gallery {
   display: flex;
   gap: 0.5rem;
@@ -1088,15 +1118,6 @@ h3 {
   margin: 0.75rem 0;
 }
 
-.basket-languages {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
-}
-.basket-languages button[aria-pressed="true"] {
-  border-color: var(--bt-action);
-  font-weight: 700;
-}
 .basket-notice {
   margin-block: 0.75rem;
   overflow-wrap: anywhere;

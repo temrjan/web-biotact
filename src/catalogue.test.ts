@@ -4,6 +4,7 @@ import {
   bannerInterval,
   banners,
   categories,
+  categoryProducts,
   pageData,
   product,
   saleProducts,
@@ -263,6 +264,50 @@ test("sale products read every on-sale page and reject duplicates", async () => 
   await expect(
     saleProducts("uz", new AbortController().signal),
   ).rejects.toThrow();
+});
+test("category products read every page of the category; any failed page rejects the whole row", async () => {
+  const listed = (id: number) => ({
+    ...item,
+    id,
+    name: `Listed ${id}`,
+    is_sale: false,
+    sale_price: null,
+    category_id: 3,
+    is_active: true,
+  });
+  const page = (items: unknown[], n: number) =>
+    new Response(
+      JSON.stringify({ items, total: 101, pages: 2, page: n, size: 100 }),
+    );
+  const first = Array.from({ length: 100 }, (_, i) => listed(i + 1));
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(page(first, 1))
+    .mockResolvedValueOnce(page([listed(101)], 2));
+  vi.stubGlobal("fetch", fetch);
+  const all = await categoryProducts("ru", new AbortController().signal, 3);
+  expect(all.map((p) => p.id)).toEqual(
+    Array.from({ length: 101 }, (_, i) => i + 1),
+  );
+  expect(fetch.mock.calls.map((c) => c[0])).toEqual([
+    "/api/v1/products?category_id=3&page=1&size=100",
+    "/api/v1/products?category_id=3&page=2&size=100",
+  ]);
+  for (const second of [
+    new Response("{}", { status: 503 }),
+    page([listed(1)], 2),
+  ]) {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(page(first, 1))
+        .mockResolvedValueOnce(second),
+    );
+    await expect(
+      categoryProducts("ru", new AbortController().signal, 3),
+    ).rejects.toThrow();
+  }
 });
 test("banner links map Mini App routes to website views and open only HTTPS externally", () => {
   const cats = [{ id: 301, slug: "product" }];

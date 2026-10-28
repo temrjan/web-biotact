@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { fixture, products, visibleCards } from "./catalogue.fixture";
 
-test("complete discovery, bounded Home, server paging/search and canonical native links", async ({
+test("complete discovery, complete Home rows, server paging/search and canonical native links", async ({
   page,
 }) => {
   const f = await fixture(page);
@@ -11,8 +11,9 @@ test("complete discovery, bounded Home, server paging/search and canonical nativ
   });
   await page.goto("/");
   const popular = page.locator('[data-category="product"]');
-  await expect(popular.locator("article")).toHaveCount(8);
-  await expect(popular.locator("h2")).toHaveText("Популярные товары");
+  // The first category row has every product of its category and the admin name.
+  await expect(popular.locator("article")).toHaveCount(40);
+  await expect(popular.locator("h2")).toHaveText("Нутриенты");
   await expect(popular.locator(".section-head a")).toHaveAttribute(
     "href",
     "/#catalogue?category=301&page=1&lang=ru",
@@ -396,7 +397,7 @@ test("responsive cards, gallery and drawer keyboard remain usable at wide, 390 a
     await page.setViewportSize({ width, height: 960 });
     await page.goto("/");
     const row = page.locator('[data-category="product"] .product-row');
-    await expect(row.locator("article")).toHaveCount(8);
+    await expect(row.locator("article")).toHaveCount(40);
     expect(await visibleCards(row)).toBe(width === 1440 ? 4 : 2);
     const media = page.locator(".card-media").first();
     const size = await media.boundingBox();
@@ -475,4 +476,61 @@ test("responsive cards, gallery and drawer keyboard remain usable at wide, 390 a
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await page.evaluate(() => (document.documentElement.style.fontSize = ""));
   }
+});
+
+test("every home category row reads all server pages of its category; a failed later page shows the row error", async ({
+  page,
+}) => {
+  const sample = products[4];
+  if (!products[0] || !sample) throw new Error("Missing fixture products");
+  // 106 products in category 301: two server pages of 100.
+  const source = [
+    products[0],
+    ...Array.from({ length: 105 }, (_, i) => ({
+      ...sample,
+      id: 5001 + i,
+      name: `Paged ${i + 1}`,
+      category_id: 301,
+      image_url: "/synthetic-image.svg",
+    })),
+  ];
+  await fixture(page, source);
+  let failSecondPage = true;
+  const pages: string[] = [];
+  await page.route("**/api/v1/products?*", (route) => {
+    const u = new URL(route.request().url());
+    if (u.searchParams.get("category_id") === "301")
+      pages.push(`${u.searchParams.get("page")}/${u.searchParams.get("size")}`);
+    return failSecondPage &&
+      u.searchParams.get("category_id") === "301" &&
+      u.searchParams.get("page") === "2"
+      ? route.fulfill({ status: 503, json: {} })
+      : route.fallback();
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  const section = page.locator('[data-category="product"]');
+  // No partial row: the first page alone is not shown.
+  await expect(section.getByRole("alert")).toBeVisible();
+  await expect(section.locator("article")).toHaveCount(0);
+  failSecondPage = false;
+  await section.getByRole("button", { name: "Повторить" }).click();
+  const row = section.locator(".product-row");
+  await expect(row.locator("article")).toHaveCount(106);
+  await expect(row.locator("article").last()).toHaveAttribute(
+    "data-product-id",
+    "5105",
+  );
+  expect(pages).toEqual(["1/100", "2/100", "1/100", "2/100"]);
+  // Category rows load card images lazily; the first visible (sale) row does not.
+  const images = row.locator("img");
+  expect(await images.count()).toBe(106);
+  expect(
+    await images.evaluateAll((nodes) =>
+      nodes.every((n) => n.getAttribute("loading") === "lazy"),
+    ),
+  ).toBe(true);
+  const saleImage = page.locator('[data-category="sale"] img');
+  await expect(saleImage).toHaveCount(1);
+  expect(await saleImage.getAttribute("loading")).toBeNull();
 });

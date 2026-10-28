@@ -81,32 +81,52 @@ async function languageStep(page: Page, lang: "ru" | "uz") {
   await basketStaysOpen(page);
 }
 
+/** Border, face, radius, clipping and outer height of a stepper-style frame. */
+function frameLook(frame: Locator) {
+  return frame.evaluate((n) => {
+    const s = getComputedStyle(n);
+    return {
+      border: [s.borderTop, s.borderBottom, s.borderLeft, s.borderRight],
+      background: s.backgroundColor,
+      radius: s.borderRadius,
+      overflow: s.overflow,
+      height: n.getBoundingClientRect().height,
+    };
+  });
+}
+type FrameLook = Awaited<ReturnType<typeof frameLook>>;
 /**
- * The row control copies the basket stepper frame (`.basket-quantity`):
- * 1px #c4c4c4 border, #ebebeb face, 10px radius and 44px rows; arrow-only
- * rows have two 44px cells.
+ * The live basket stepper (`.basket-quantity`) of the open basket, as the
+ * reference for the row control frame; needs at least one basket line. The
+ * basket closes again afterwards.
  */
-async function stepperFrame(control: Locator, cells: string[]) {
-  expect(
-    await control.evaluate((n) => {
-      const s = getComputedStyle(n);
-      return [s.borderTop, s.borderBottom, s.borderLeft, s.borderRight].concat(
-        s.backgroundColor,
-        s.borderRadius,
-        s.overflow,
-        String(n.getBoundingClientRect().height),
-      );
-    }),
-  ).toEqual([
-    "1px solid rgb(196, 196, 196)",
-    "1px solid rgb(196, 196, 196)",
-    "1px solid rgb(196, 196, 196)",
-    "1px solid rgb(196, 196, 196)",
-    "rgb(235, 235, 235)",
-    "10px",
-    "hidden",
-    "46",
-  ]);
+async function basketStepper(page: Page) {
+  await page.locator(".basket-button").click();
+  const stepper = page
+    .locator("dialog.basket-panel[open] .basket-quantity")
+    .first();
+  await expect(stepper).toBeVisible();
+  const frame = await frameLook(stepper);
+  const cell = (await stepper.getByRole("button").first().boundingBox())
+    ?.height;
+  await page.keyboard.press("Escape");
+  await dialogCount(page, 0);
+  // A meaningful reference, not two empty measurements that happen to agree.
+  expect(frame.border[0]).toMatch(/^1px solid rgb/);
+  expect(cell).toBeGreaterThanOrEqual(44);
+  return { frame, cell };
+}
+/**
+ * The row control copies the basket stepper frame (`.basket-quantity`, measured
+ * live in the same run): same border, face, radius, clipping, outer height and
+ * row height; arrow-only rows have two cells.
+ */
+async function stepperFrame(
+  control: Locator,
+  cells: string[],
+  basket: { frame: FrameLook; cell: number | undefined },
+) {
+  expect(await frameLook(control)).toEqual(basket.frame);
   const children = control.locator(":scope > *");
   expect(
     await children.evaluateAll((nodes) =>
@@ -114,7 +134,7 @@ async function stepperFrame(control: Locator, cells: string[]) {
     ),
   ).toEqual(cells);
   for (const child of await children.all()) {
-    expect((await child.boundingBox())?.height).toBe(44);
+    expect((await child.boundingBox())?.height).toBe(basket.cell);
     await expect(child).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     await expect(child).toHaveCSS("color", "rgb(46, 37, 33)");
   }
@@ -2128,14 +2148,17 @@ test("Home rows scroll with one stepper-style row control and no scrollbar; cata
   expect(
     await row.evaluate((n) => (n as HTMLElement).offsetHeight - n.clientHeight),
   ).toBe(0);
-  // One control instead of two arrows and a pill: [‹] Все [›] in the basket stepper frame.
+  // One control instead of two arrows and a pill: [‹] Все [›] in the frame of
+  // the live basket stepper (one basket line makes the basket show it).
+  await row.locator(ordinaryCard).locator(".add").click();
+  const basket = await basketStepper(page);
   const control = popular.locator(".section-head .slider-controls");
   await expect(control).toHaveCount(1);
-  await stepperFrame(control, [
-    "Предыдущие товары",
-    "Все: Нутриенты",
-    "Следующие товары",
-  ]);
+  await stepperFrame(
+    control,
+    ["Предыдущие товары", "Все: Нутриенты", "Следующие товары"],
+    basket,
+  );
   const previous = control.getByRole("button", { name: "Предыдущие товары" });
   const next = control.getByRole("button", { name: "Следующие товары" });
   const all = control.getByRole("link", { name: "Все: Нутриенты" });
@@ -2201,7 +2224,7 @@ test("Home rows scroll with one stepper-style row control and no scrollbar; cata
   // The sale row has the same frame with arrows only; its single product
   // does not overflow, so both arrows are at an end.
   const sale = page.locator('[data-category="sale"] .slider-controls');
-  await stepperFrame(sale, ["Предыдущие товары", "Следующие товары"]);
+  await stepperFrame(sale, ["Предыдущие товары", "Следующие товары"], basket);
   await expect(sale.locator(".view-all")).toHaveCount(0);
   for (const arrow of await sale.getByRole("button").all()) {
     await expect(arrow).toHaveAttribute("aria-controls", "home-sale-row");
@@ -2234,11 +2257,11 @@ test("Home rows scroll with one stepper-style row control and no scrollbar; cata
   const compact = page.locator('[data-category="product"]');
   await expect(compact.locator("article")).toHaveCount(40);
   const compactControl = compact.locator(".slider-controls");
-  await stepperFrame(compactControl, [
-    "Oldingi mahsulotlar",
-    "Hammasi: Nutriyentlar API",
-    "Keyingi mahsulotlar",
-  ]);
+  await stepperFrame(
+    compactControl,
+    ["Oldingi mahsulotlar", "Hammasi: Nutriyentlar API", "Keyingi mahsulotlar"],
+    basket,
+  );
   await expect(
     compactControl.getByRole("button", { name: "Keyingi mahsulotlar" }),
   ).toBeEnabled();
@@ -2852,11 +2875,6 @@ test("product page follows the Mini App: description, composition, disclaimer no
   const previous = recommended.getByRole("button", {
     name: "Предыдущие товары",
   });
-  // Same stepper frame as the home rows, arrows only.
-  await stepperFrame(recommended.locator(".slider-controls"), [
-    "Предыдущие товары",
-    "Следующие товары",
-  ]);
   await expect(recommended.locator(".view-all")).toHaveCount(0);
   for (const arrow of [previous, next]) {
     await expect(arrow).toHaveAttribute(
@@ -2875,6 +2893,12 @@ test("product page follows the Mini App: description, composition, disclaimer no
   await expect(card.locator(".price strong")).toContainText(/112\s?233,44 UZS/);
   await card.locator(".add").click();
   await expect(page.locator(".basket-badge")).toHaveText("1");
+  // Same frame as the live basket stepper and the home rows, arrows only.
+  await stepperFrame(
+    recommended.locator(".slider-controls"),
+    ["Предыдущие товары", "Следующие товары"],
+    await basketStepper(page),
+  );
   // On a phone the slider is far down the page; the opened product starts at the top.
   await page.setViewportSize({ width: 390, height: 844 });
   await card.locator("h3 a").scrollIntoViewIfNeeded();

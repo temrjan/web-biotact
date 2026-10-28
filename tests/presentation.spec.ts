@@ -2603,6 +2603,83 @@ test("phone home rows shift once by a small random distance when they come into 
   await expect(row).toHaveCSS("scroll-snap-type", "x mandatory");
 });
 
+test("phone row hint plays once per site visit: back on Home by link, menu or Back without a reload the row stays at the start; a reload is a new visit", async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const row = page.locator('[data-category="product"] .product-row'),
+    cards = row.locator("article");
+  const left = () => row.evaluate((n) => n.scrollLeft);
+  /** Mark the document, so a later check proves no reload happened in between. */
+  const mark = () =>
+    page.evaluate(() => Object.assign(window, { sameVisit: true }));
+  async function shifts() {
+    await expect(cards).toHaveCount(40);
+    await row.scrollIntoViewIfNeeded();
+    await expect.poll(left, { timeout: 3000 }).toBeGreaterThan(0);
+    await expect(row).toHaveAttribute("data-hint", "");
+  }
+  /** Back on Home in the same document: the row starts at 0 and stays there past the longest hint delay, snapping as usual. */
+  async function stays() {
+    await expect(page).toHaveURL(/#home\?lang=ru$/);
+    expect(await page.evaluate(() => "sameVisit" in window)).toBe(true);
+    await expect(cards).toHaveCount(40);
+    await row.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(1500);
+    expect(await left()).toBe(0);
+    await expect(row).not.toHaveAttribute("data-hint");
+    await expect(row).toHaveCSS("scroll-snap-type", "x mandatory");
+  }
+  async function toCatalogue() {
+    await page.locator('[data-category="product"] .view-all-link').click();
+    await expect(page).toHaveURL(/#catalogue\?/);
+    await expect(row).toHaveCount(0);
+  }
+  // First view: the row shifts.
+  await page.goto("/#home?lang=ru");
+  await mark();
+  await shifts();
+  // Catalogue by the row's "Все" link, then Back.
+  await toCatalogue();
+  await page.goBack();
+  await stays();
+  // Catalogue again, then Home by the logo in the phone menu.
+  await toCatalogue();
+  await page.locator(".menu-toggle").click();
+  await page.locator(".drawer .brand").click();
+  await stays();
+  // A reload is a new visit: the row shifts again.
+  await page.reload();
+  expect(await page.evaluate(() => "sameVisit" in window)).toBe(false);
+  await shifts();
+  // A row the visitor touched before the hint keeps its chance used up too.
+  await page.reload();
+  await mark();
+  await expect(cards).toHaveCount(40);
+  await row.evaluate((n) => {
+    n.scrollIntoView({ block: "center" });
+    n.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  });
+  await page.waitForTimeout(1500);
+  expect(await left()).toBe(0);
+  await toCatalogue();
+  await page.goBack();
+  await stays();
+  // A row that never came into view before leaving still gets its one shift.
+  await page.reload();
+  await mark();
+  await expect(cards).toHaveCount(40);
+  await page.waitForTimeout(800);
+  expect(await left()).toBe(0);
+  await page.goto("/#catalogue?page=1&lang=ru");
+  await expect(row).toHaveCount(0);
+  await page.goBack();
+  await expect(page).toHaveURL(/#home\?lang=ru$/);
+  expect(await page.evaluate(() => "sameVisit" in window)).toBe(true);
+  await shifts();
+});
+
 test("side menu shows no per-item loading or error text; the page keeps its own retry", async ({
   page,
 }) => {

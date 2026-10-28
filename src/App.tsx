@@ -418,19 +418,29 @@ const ROW_HINT_SHARE = [0.3, 0.55] as const;
 const between = ([low, high]: readonly [number, number]) =>
   low + Math.random() * (high - low);
 /**
+ * Home rows (by element id) whose hint chance is used up in this document
+ * load: they shifted, or the visitor touched them first. Module state, so it
+ * outlives Home unmounting on a view change and resets on a reload.
+ */
+const hintedRows = new Set<string>();
+/**
  * Phones (M6): a row whose cards do not fit, when it first comes into view,
  * waits a small random delay and smoothly scrolls a small random distance, and
- * stays there. Once per page view; not under reduced motion; not after the
- * visitor touched, focused or scrolled that row. Snapping is off for a shifted
- * row (re-enabling it would snap the row straight back).
+ * stays there. Once per row per site visit (document load, OPT-01): a row
+ * that shifted or that the visitor touched, focused or scrolled stays at its
+ * start when Home is shown again without a reload. Not under reduced motion.
+ * Snapping is off for a shifted row (re-enabling it would snap the row
+ * straight back).
  */
 function useRowHint(row: HTMLDivElement | null, enabled: boolean) {
-  const done = useRef(false);
   useEffect(() => {
-    if (!row || !enabled || done.current) return;
+    if (!row || !enabled) return;
+    const key = row.id;
+    const done = () => hintedRows.has(key);
+    if (done()) return;
     let timer = 0;
     const touched = () => {
-      done.current = true;
+      hintedRows.add(key);
       window.clearTimeout(timer);
     };
     const inputs = [
@@ -445,9 +455,9 @@ function useRowHint(row: HTMLDivElement | null, enabled: boolean) {
       row.addEventListener(type, touched, { passive: true });
     const observer = new IntersectionObserver(
       (entries) => {
-        if (done.current) observer.disconnect();
+        if (done()) observer.disconnect();
         if (
-          done.current ||
+          done() ||
           !entries.some((entry) => entry.isIntersecting) ||
           !window.matchMedia(COMPACT_QUERY).matches
         )
@@ -457,7 +467,7 @@ function useRowHint(row: HTMLDivElement | null, enabled: boolean) {
           const card = row.firstElementChild,
             max = row.scrollWidth - row.clientWidth;
           if (
-            done.current ||
+            done() ||
             row.scrollLeft > 1 ||
             max <= 1 ||
             !(card instanceof HTMLElement) ||
@@ -465,7 +475,7 @@ function useRowHint(row: HTMLDivElement | null, enabled: boolean) {
             window.matchMedia("(prefers-reduced-motion: reduce)").matches
           )
             return;
-          done.current = true;
+          hintedRows.add(key);
           row.dataset.hint = "";
           row.scrollTo({
             left: Math.min(

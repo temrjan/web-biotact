@@ -2869,10 +2869,12 @@ test("phone header is one row of icons with in-place search; Account and RU/UZ m
       "aria-expanded",
       "false",
     );
-    await expect(page.locator(".top-search")).toHaveAttribute(
+    // The form exists only while expanded, when this icon is not rendered,
+    // so the collapsed icon names no missing element (OPT-02).
+    await expect(page.locator(".top-search")).not.toHaveAttribute(
       "aria-controls",
-      "top-search",
     );
+    await ariaControlsResolve(page);
     await expect(bar.locator(".search, .languages, a")).toHaveCount(0);
     await expect(bar).not.toContainText("ИИ · помощь");
     await page.locator(".top-search").hover();

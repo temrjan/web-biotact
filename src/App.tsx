@@ -1659,8 +1659,9 @@ export default function App() {
                     ref={searchToggle}
                     className="top-icon top-search"
                     aria-label={t.search}
+                    // The form exists only while expanded, and then this
+                    // icon is not rendered: no aria-controls to a missing id.
                     aria-expanded={false}
-                    aria-controls="top-search"
                     onClick={() => setSearchOpen(true)}
                   >
                     <SearchIcon />

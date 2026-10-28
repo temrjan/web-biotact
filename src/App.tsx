@@ -26,7 +26,15 @@ import * as api from "./catalogue";
 import { useGuestBasket } from "./guestBasket";
 import { href, parseLocation, type Location } from "./navigation";
 import logoUrl from "./assets/logo-biotact.svg";
-import { ChevronLeft, ChevronRight } from "./icons";
+import {
+  ChevronLeft,
+  ChevronRight,
+  CloseIcon,
+  GlobeIcon,
+  SearchIcon,
+  SparklesIcon,
+  UserIcon,
+} from "./icons";
 
 const copy = {
   ru: {
@@ -36,6 +44,8 @@ const copy = {
     all: "Все товары",
     search: "Поиск товаров",
     find: "Найти",
+    closeSearch: "Закрыть поиск",
+    language: "Язык",
     loading: "Загружаем…",
     error: "Не удалось загрузить данные. Проверьте соединение и повторите.",
     retry: "Повторить",
@@ -86,6 +96,8 @@ const copy = {
     all: "Barcha mahsulotlar",
     search: "Mahsulot qidirish",
     find: "Qidirish",
+    closeSearch: "Qidiruvni yopish",
+    language: "Til",
     loading: "Yuklanmoqda…",
     error:
       "Maʼlumotlarni yuklab boʻlmadi. Ulanishni tekshirib, qayta urinib koʻring.",
@@ -994,13 +1006,18 @@ function Product({
     </>
   );
 }
-function Search({ loc }: { loc: Location }) {
+/**
+ * Product search. On phones it is the in-place expanded form of the header
+ * search icon (`onClose`): it takes focus, and submit closes it.
+ */
+function Search({ loc, onClose }: { loc: Location; onClose?: () => void }) {
   const [search, setSearch] = useState(loc.q || "");
   const t = copy[loc.lang];
   return (
     <form
       className="search"
       role="search"
+      {...(onClose ? { id: "top-search" } : {})}
       onSubmit={(e) => {
         e.preventDefault();
         window.location.hash =
@@ -1010,9 +1027,12 @@ function Search({ loc }: { loc: Location }) {
             page: 1,
             ...(search.trim() ? { q: search.trim() } : {}),
           }).split("#")[1] || "";
+        onClose?.();
       }}
     >
+      {onClose && <SearchIcon />}
       <input
+        autoFocus={!!onClose}
         aria-label={t.search}
         placeholder={t.search}
         value={search}
@@ -1041,6 +1061,10 @@ export default function App() {
   const [compact, setCompact] = useState(
     () => window.matchMedia("(max-width: 999px)").matches,
   );
+  // Phone header search: an icon that expands into the form in place (M2).
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchToggle = useRef<HTMLButtonElement>(null),
+    searchFocusReturn = useRef(false);
   const hashRef = useRef(hash);
   const dialog = useRef<HTMLDialogElement>(null),
     assistantDialog = useRef<HTMLDialogElement>(null),
@@ -1059,6 +1083,7 @@ export default function App() {
       if (previous.lang !== next.lang) setBasketLanguageRevision((n) => n + 1);
       hashRef.current = window.location.hash;
       setHash(window.location.hash);
+      setSearchOpen(false);
       setSurface((current) =>
         current === "size" || (current === "basket" && !languageOnly)
           ? null
@@ -1168,6 +1193,7 @@ export default function App() {
     const change = () => {
       setCompact(media.matches);
       if (!media.matches) {
+        setSearchOpen(false);
         if (dialog.current?.contains(document.activeElement))
           requestAnimationFrame(() =>
             document.querySelector<HTMLElement>(".sidebar .brand")?.focus(),
@@ -1213,6 +1239,17 @@ export default function App() {
     () => () => document.documentElement.classList.remove("modal-open"),
     [],
   );
+  useEffect(() => {
+    // Closing the expanded search returns focus to its icon once it is back.
+    if (!searchOpen && searchFocusReturn.current) {
+      searchFocusReturn.current = false;
+      searchToggle.current?.focus();
+    }
+  }, [searchOpen]);
+  function closeSearch() {
+    searchFocusReturn.current = true;
+    setSearchOpen(false);
+  }
   const context =
     loc.view === "home"
       ? t.home
@@ -1224,7 +1261,7 @@ export default function App() {
   const all = href({ view: "catalogue", lang: loc.lang, page: 1 });
   const basketButton = (
     <button
-      className="basket-button"
+      className={compact ? "basket-button top-icon" : "basket-button"}
       aria-label={`${basketCopy[loc.lang].title}${units ? ` · ${units}` : ""}`}
       onClick={(e) => show("basket", e.currentTarget)}
     >
@@ -1236,6 +1273,29 @@ export default function App() {
         </span>
       )}
     </button>
+  );
+  const languages = (labelledBy?: string) => (
+    <div
+      className="languages"
+      {...(labelledBy
+        ? { role: "group", "aria-labelledby": labelledBy }
+        : { "aria-label": "Language" })}
+    >
+      <a
+        lang="ru"
+        aria-current={loc.lang === "ru" ? "true" : undefined}
+        href={href({ ...loc, lang: "ru" })}
+      >
+        RU
+      </a>
+      <a
+        lang="uz"
+        aria-current={loc.lang === "uz" ? "true" : undefined}
+        href={href({ ...loc, lang: "uz" })}
+      >
+        UZ
+      </a>
+    </div>
   );
   // The basket sits in the visible side menu on desktop and in the top bar on phones.
   const navigation = (sidebar: boolean) => (
@@ -1302,12 +1362,22 @@ export default function App() {
         </button>
         {sidebar && !compact && basketButton}
         <a
+          className={sidebar ? undefined : "nav-account"}
           aria-current={loc.view === "account" ? "page" : undefined}
           href={href({ view: "account", lang: loc.lang, page: 1 })}
         >
+          {!sidebar && <UserIcon />}
           {t.account}
         </a>
       </nav>
+      {/* Phones choose the language once in the menu, not in the top bar. */}
+      {!sidebar && compact && (
+        <div className="drawer-language">
+          <GlobeIcon />
+          <span id="drawer-language-label">{t.language}</span>
+          {languages("drawer-language-label")}
+        </div>
+      )}
     </>
   );
   return (
@@ -1345,44 +1415,69 @@ export default function App() {
         {navigation(false)}
       </dialog>
       <div className="workspace">
-        <header className="topbar">
-          <button
-            className="menu-toggle"
-            onClick={(e) => show("menu", e.currentTarget)}
-          >
-            {t.menu} ☰
-          </button>
-          <Search key={loc.q || ""} loc={loc} />
-          <div className="top-utilities">
-            <button
-              className="top-ai"
-              aria-controls="consultant"
-              aria-expanded={surface === "assistant"}
-              onClick={(e) => show("assistant", e.currentTarget)}
-            >
-              {t.aiShort}
-            </button>
-            {compact && basketButton}
-            <a href={href({ view: "account", lang: loc.lang, page: 1 })}>
-              {t.account}
-            </a>
-            <div className="languages" aria-label="Language">
-              <a
-                lang="ru"
-                aria-current={loc.lang === "ru" ? "true" : undefined}
-                href={href({ ...loc, lang: "ru" })}
+        <header
+          className="topbar"
+          onKeyDown={(e) => {
+            if (compact && searchOpen && e.key === "Escape") {
+              e.preventDefault();
+              closeSearch();
+            }
+          }}
+        >
+          {compact && searchOpen ? (
+            // Expanded phone search takes the place of the whole row (D2).
+            <>
+              <Search key={loc.q || ""} loc={loc} onClose={closeSearch} />
+              <button
+                className="top-icon search-close"
+                aria-label={t.closeSearch}
+                onClick={closeSearch}
               >
-                RU
-              </a>
-              <a
-                lang="uz"
-                aria-current={loc.lang === "uz" ? "true" : undefined}
-                href={href({ ...loc, lang: "uz" })}
+                <CloseIcon />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                className="menu-toggle"
+                onClick={(e) => show("menu", e.currentTarget)}
               >
-                UZ
-              </a>
-            </div>
-          </div>
+                {t.menu} ☰
+              </button>
+              {!compact && <Search key={loc.q || ""} loc={loc} />}
+              <div className="top-utilities">
+                {compact && (
+                  <button
+                    ref={searchToggle}
+                    className="top-icon top-search"
+                    aria-label={t.search}
+                    aria-expanded={false}
+                    aria-controls="top-search"
+                    onClick={() => setSearchOpen(true)}
+                  >
+                    <SearchIcon />
+                  </button>
+                )}
+                <button
+                  className={compact ? "top-icon top-ai" : "top-ai"}
+                  aria-label={compact ? t.ai : undefined}
+                  aria-controls="consultant"
+                  aria-expanded={surface === "assistant"}
+                  onClick={(e) => show("assistant", e.currentTarget)}
+                >
+                  {compact ? <SparklesIcon /> : t.aiShort}
+                </button>
+                {compact && basketButton}
+                {/* Phones reach Account and the language in the menu (M3, M4). */}
+                {!compact && (
+                  <a href={href({ view: "account", lang: loc.lang, page: 1 })}>
+                    {t.account}
+                  </a>
+                )}
+                {!compact && languages()}
+              </div>
+            </>
+          )}
         </header>
         <main id="content" className="content" tabIndex={-1}>
           {loc.view === "home" && (

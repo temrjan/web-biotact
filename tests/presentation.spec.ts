@@ -18,6 +18,12 @@ async function noOverflow(page: Page) {
       ),
   ).toBe(true);
 }
+/** RU/UZ sits in the desktop top bar and, below 1000px, in the phone menu (M4). */
+async function chooseLanguage(page: Page, lang: "ru" | "uz") {
+  if (await page.locator(".menu-toggle").isVisible())
+    await page.locator(".menu-toggle").click();
+  await page.locator(`.languages [lang="${lang}"]`).click();
+}
 async function dialogCount(page: Page, count: number) {
   await expect(page.locator("dialog[open]")).toHaveCount(count);
 }
@@ -332,7 +338,15 @@ test("brand-green 2px keyboard focus remains visible on detail, fields and modal
       () => (document.documentElement.style.fontSize = "125%"),
     );
     await page.keyboard.press("Tab");
+    // Phone header icons and the expanded search field keep the green ring.
+    for (const icon of [".top-search", ".top-ai", ".topbar .basket-button"])
+      await greenFocus(page.locator(icon));
+    await page.locator(".top-search").focus();
+    await page.keyboard.press("Enter");
     await greenFocus(page.locator(".search input"));
+    await greenFocus(page.locator(".search-close"));
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".top-search")).toBeFocused();
     await greenFocus(page.locator('.gallery button[aria-pressed="true"]'));
     const detail = page.locator(".product-summary"),
       choice = detail.getByRole("combobox");
@@ -379,7 +393,8 @@ test("brand-green 2px keyboard focus remains visible on detail, fields and modal
   await page.route("**/api/v1/buyer/auth/**", (r) =>
     r.fulfill({ status: 503, json: {} }),
   );
-  await page.locator(".top-utilities > a").click();
+  await page.locator(".menu-toggle").click();
+  await page.locator(".drawer .nav-account").click();
   await page.keyboard.press("Tab");
   await greenFocus(page.locator(".account button"));
   await greenFocus(page.locator(".account a").first());
@@ -1150,7 +1165,7 @@ test("Home banners show admin images in server order at 3:1 with Mini App links,
     await page.evaluate(() => {
       document.documentElement.style.fontSize = "";
     });
-    await page.locator('.languages [lang="uz"]').click();
+    await chooseLanguage(page, "uz");
     await heroSlide(page, 6);
     await expect(page.locator(".hero-next")).toHaveAccessibleName(
       "Keyingi banner",
@@ -2340,6 +2355,187 @@ test("basket sits in the side menu on desktop and in the sticky top bar on phone
   await page.keyboard.press("Escape");
   await expect(topBasket).toBeFocused();
   await noOverflow(page);
+});
+
+/** One phone header icon: a 44px plate-less brand-green button with its name. */
+async function headerIcon(icon: Locator, name: string) {
+  await expect(icon).toBeVisible();
+  await expect(icon).toHaveAccessibleName(name);
+  const box = await icon.boundingBox();
+  expect([box?.width, box?.height]).toEqual([44, 44]);
+  await expect(icon).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(icon).toHaveCSS("box-shadow", "none");
+  await expect(icon).toHaveCSS("border-top-width", "0px");
+  await expect(icon).toHaveCSS("color", "rgb(12, 61, 43)");
+  await expect(icon.locator("svg")).toHaveCount(1);
+}
+
+test("phone header is one row of icons with in-place search; Account and RU/UZ move to the menu; desktop header unchanged", async ({
+  page,
+}) => {
+  await fixture(page);
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/#home?lang=ru");
+    await expect(page.locator(".hero-stage")).toBeVisible();
+    const bar = page.locator(".topbar");
+    expect((await bar.boundingBox())?.height).toBe(69);
+    const items = bar.locator(":scope > *, .top-utilities > *");
+    expect(
+      await items.evaluateAll((nodes) =>
+        nodes.map((n) => n.className || n.tagName),
+      ),
+    ).toEqual([
+      "menu-toggle",
+      "top-utilities",
+      "top-icon top-search",
+      "top-icon top-ai",
+      "basket-button top-icon",
+    ]);
+    await expect(page.locator(".menu-toggle")).toHaveText("Меню ☰");
+    await headerIcon(page.locator(".top-search"), "Поиск товаров");
+    await headerIcon(page.locator(".top-ai"), "ИИ-консультант");
+    await headerIcon(page.locator(".topbar .basket-button"), "Корзина");
+    // All four controls share one row.
+    const centres = await bar
+      .locator(".menu-toggle, .top-icon")
+      .evaluateAll((nodes) =>
+        nodes.map((n) => {
+          const r = n.getBoundingClientRect();
+          return r.y + r.height / 2;
+        }),
+      );
+    expect(new Set(centres).size).toBe(1);
+    await expect(page.locator(".top-search")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    await expect(page.locator(".top-search")).toHaveAttribute(
+      "aria-controls",
+      "top-search",
+    );
+    await expect(bar.locator(".search, .languages, a")).toHaveCount(0);
+    await expect(bar).not.toContainText("ИИ · помощь");
+    await page.locator(".top-search").hover();
+    await expect(page.locator(".top-search")).toHaveCSS(
+      "background-color",
+      "rgb(227, 227, 227)",
+    );
+    await noOverflow(page);
+  }
+
+  // M2: the search icon expands into the field in place of the whole row.
+  await page.locator(".top-search").click();
+  const form = page.locator(".topbar #top-search");
+  await expect(form).toBeVisible();
+  await expect(form).toHaveAttribute("role", "search");
+  await expect(
+    form.getByRole("textbox", { name: "Поиск товаров" }),
+  ).toBeFocused();
+  await expect(
+    page.locator(".topbar .menu-toggle, .topbar .top-utilities"),
+  ).toHaveCount(0);
+  const close = page.getByRole("button", {
+    name: "Закрыть поиск",
+    exact: true,
+  });
+  await expect(close).toBeVisible();
+  expect((await page.locator(".topbar").boundingBox())?.height).toBe(69);
+  await noOverflow(page);
+  await page.keyboard.type("Match 4");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/#catalogue\?q=Match\+4&page=1&lang=ru$/);
+  await expect(page.locator(".product-grid article")).toHaveCount(6);
+  await expect(form).toHaveCount(0);
+  await expect(page.locator(".top-search")).toBeFocused();
+  // On a results page the field opens with the current query.
+  await page.locator(".top-search").click();
+  await expect(form.locator("input")).toHaveValue("Match 4");
+  await close.click();
+  await expect(form).toHaveCount(0);
+  await expect(page.locator(".top-search")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(form.locator("input")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(form).toHaveCount(0);
+  await expect(page.locator(".top-search")).toBeFocused();
+  // The expanded field does not stay open across views.
+  await page.locator(".top-search").click();
+  await page.evaluate(() => (location.hash = "#home?lang=ru"));
+  await expect(page.locator(".hero-stage")).toBeVisible();
+  await expect(form).toHaveCount(0);
+  await expect(page.locator(".top-search")).toBeVisible();
+
+  // M3, M4: Account and the language live in the phone menu.
+  await page.locator(".menu-toggle").click();
+  const drawer = page.locator(".drawer");
+  await expect(drawer).toBeVisible();
+  const account = drawer.getByRole("link", { name: "Аккаунт", exact: true });
+  await expect(account).toHaveAttribute("href", "/#account?lang=ru");
+  await expect(account.locator("svg")).toHaveCount(1);
+  const language = drawer.getByRole("group", { name: "Язык", exact: true });
+  await expect(language.getByRole("link")).toHaveText(["RU", "UZ"]);
+  await expect(language.locator('[lang="ru"]')).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  await expect(page.locator(".languages")).toHaveCount(1);
+  const menuItems = await drawer.evaluate((d) =>
+    Array.from(d.querySelectorAll(".nav-primary > *, .drawer-language")).map(
+      (n) => n.className,
+    ),
+  );
+  expect(menuItems.indexOf("drawer-language")).toBe(menuItems.length - 1);
+  expect(menuItems[menuItems.length - 2]).toBe("nav-account");
+  await expect(drawer.locator(".drawer-language")).toHaveCSS(
+    "border-top",
+    "1px solid rgb(214, 214, 214)",
+  );
+  await language.locator('[lang="uz"]').click();
+  await expect(drawer).not.toBeVisible();
+  await expect(page).toHaveURL(/#home\?lang=uz$/);
+  await expect(page.locator(".menu-toggle")).toBeFocused();
+  await headerIcon(page.locator(".top-search"), "Mahsulot qidirish");
+  await headerIcon(page.locator(".top-ai"), "AI-maslahatchi");
+  await headerIcon(page.locator(".topbar .basket-button"), "Savat");
+  await page.locator(".top-search").click();
+  await expect(
+    page.getByRole("button", { name: "Qidiruvni yopish", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.locator(".menu-toggle").click();
+  await expect(
+    drawer.getByRole("group", { name: "Til", exact: true }),
+  ).toBeVisible();
+  await expect(drawer.locator('.languages [lang="uz"]')).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  await expect(
+    drawer.getByRole("link", { name: "Akkaunt", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  // 125% text keeps the bar usable without horizontal overflow.
+  await page.evaluate(() => (document.documentElement.style.fontSize = "125%"));
+  await noOverflow(page);
+  await page.evaluate(() => (document.documentElement.style.fontSize = ""));
+
+  // Desktop keeps its search field, text AI button, Account and RU/UZ (D3).
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/#home?lang=ru");
+  const top = page.locator(".topbar");
+  await expect(
+    top.getByRole("textbox", { name: "Поиск товаров" }),
+  ).toBeVisible();
+  await expect(top.locator(".top-ai")).toHaveText("ИИ · помощь");
+  await expect(top.getByRole("link", { name: "Аккаунт" })).toBeVisible();
+  await expect(top.locator(".languages a")).toHaveText(["RU", "UZ"]);
+  await expect(page.locator(".languages")).toHaveCount(1);
+  await expect(
+    page.locator(".top-search, .top-icon, .menu-toggle"),
+  ).toHaveCount(1);
+  await expect(page.locator(".menu-toggle")).toBeHidden();
+  expect((await top.boundingBox())?.height).toBe(79);
 });
 
 test("product page follows the Mini App: description, composition, disclaimer note, embedded video and recommended slider", async ({

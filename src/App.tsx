@@ -26,6 +26,7 @@ import * as api from "./catalogue";
 import { useGuestBasket } from "./guestBasket";
 import { href, parseLocation, type Location } from "./navigation";
 import logoUrl from "./assets/logo-biotact.svg";
+import { ChevronLeft, ChevronRight } from "./icons";
 
 const copy = {
   ru: {
@@ -40,7 +41,7 @@ const copy = {
     retry: "Повторить",
     empty: "Товары не найдены",
     unavailable: "Категория недоступна",
-    viewAll: "Смотреть все",
+    viewAll: "Все",
     sales: "Акции",
     details: "Подробнее о товаре",
     noImage: "Нет изображения",
@@ -91,7 +92,7 @@ const copy = {
     retry: "Qayta urinish",
     empty: "Mahsulotlar topilmadi",
     unavailable: "Turkum mavjud emas",
-    viewAll: "Hammasini ko'rish",
+    viewAll: "Hammasi",
     sales: "Aksiyalar",
     details: "Mahsulot haqida batafsil",
     noImage: "Rasm mavjud emas",
@@ -376,24 +377,18 @@ function Recovery({ lang, title }: { lang: api.Language; title: string }) {
 /** Scroll state of one horizontal product row, for its header arrows. */
 function useSlider() {
   const [row, setRow] = useState<HTMLDivElement | null>(null);
-  const [edges, setEdges] = useState({
-    overflow: false,
-    start: true,
-    end: true,
-  });
+  const [edges, setEdges] = useState({ start: true, end: true });
   useEffect(() => {
     if (!row) return;
     const measure = () => {
       const max = row.scrollWidth - row.clientWidth;
+      // A row without overflow is at both ends.
       const next = {
-        overflow: max > 1,
         start: row.scrollLeft <= 1,
         end: row.scrollLeft >= max - 1,
       };
       setEdges((current) =>
-        current.overflow === next.overflow &&
-        current.start === next.start &&
-        current.end === next.end
+        current.start === next.start && current.end === next.end
           ? current
           : next,
       );
@@ -422,7 +417,10 @@ function useSlider() {
   };
 }
 type Slider = ReturnType<typeof useSlider>;
-/** Row header controls: arrows only when the row overflows, then the optional "view all" pill. */
+/**
+ * Row header control in the basket stepper frame: [‹] Все [›]. Rows without a
+ * catalogue target show the arrows only; an arrow at its end stays focusable.
+ */
 function SliderControls({
   slider,
   rowId,
@@ -432,35 +430,39 @@ function SliderControls({
   slider: Slider;
   rowId: string;
   lang: api.Language;
-  more?: string;
+  more?: { href: string; title: string };
 }) {
   const t = copy[lang];
+  const arrow = (direction: -1 | 1) => {
+    const disabled = direction < 0 ? slider.start : slider.end;
+    return (
+      <button
+        type="button"
+        className="slider-arrow"
+        aria-label={direction < 0 ? t.previousItems : t.nextItems}
+        aria-controls={rowId}
+        aria-disabled={disabled}
+        onClick={() => {
+          if (!disabled) slider.scroll(direction);
+        }}
+      >
+        {direction < 0 ? <ChevronLeft /> : <ChevronRight />}
+      </button>
+    );
+  };
   return (
     <div className="slider-controls">
-      {slider.overflow &&
-        ([-1, 1] as const).map((direction) => {
-          const disabled = direction < 0 ? slider.start : slider.end;
-          return (
-            <button
-              key={direction}
-              type="button"
-              className="slider-arrow"
-              aria-label={direction < 0 ? t.previousItems : t.nextItems}
-              aria-controls={rowId}
-              aria-disabled={disabled}
-              onClick={() => {
-                if (!disabled) slider.scroll(direction);
-              }}
-            >
-              <span aria-hidden="true">{direction < 0 ? "←" : "→"}</span>
-            </button>
-          );
-        })}
+      {arrow(-1)}
       {more && (
-        <a className="view-all" href={more}>
+        <a
+          className="view-all"
+          href={more.href}
+          aria-label={`${t.viewAll}: ${more.title}`}
+        >
           {t.viewAll}
         </a>
       )}
+      {arrow(1)}
     </div>
   );
 }
@@ -528,12 +530,15 @@ function CategoryRow({
           slider={slider}
           rowId={`${id}-row`}
           lang={lang}
-          more={href({
-            view: "catalogue",
-            lang,
-            page: 1,
-            category: category.id,
-          })}
+          more={{
+            href: href({
+              view: "catalogue",
+              lang,
+              page: 1,
+              category: category.id,
+            }),
+            title,
+          }}
         />
       </div>
       <State result={read.result} lang={lang} retry={read.retry}>

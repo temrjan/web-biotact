@@ -41,54 +41,77 @@
 .assistant-open .product-row {
   grid-auto-columns: calc((100% - 1.5rem) / 2);
 }
-/* Row header: title on the left, arrows and the "view all" pill on the right. */
+/* Row header: title on the left, the row control on the right. */
 .slider-head {
   align-items: center;
 }
+/*
+ * One row control in the basket stepper frame (border, background, radius and
+ * 44px rows of .basket-quantity): [‹] Все [›], or the two arrows only.
+ */
 .slider-controls {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
   margin-left: auto;
+  border: var(--bt-border-width) solid var(--bt-border);
+  border-radius: var(--bt-radius-control);
+  background: var(--bt-neutral);
+  overflow: hidden;
+}
+.slider-controls .slider-arrow,
+.slider-controls .view-all {
+  height: var(--bt-control-min-height);
+  color: var(--bt-text);
 }
 .slider-controls .slider-arrow {
-  width: 2.75rem;
+  width: var(--bt-control-min-height);
+  min-height: 0;
   padding: 0;
-  border-radius: 999px;
-  color: var(--bt-action);
-  font-size: 1.25rem;
-  line-height: 1;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
-.slider-controls .slider-arrow[aria-disabled="true"] {
-  opacity: 0.4;
-  cursor: default;
+/* Vector chevrons are centred by the button box, not by font metrics. */
+.slider-arrow .icon {
+  display: block;
+  width: 1.25rem;
+  height: 1.25rem;
 }
-.slider-controls .slider-arrow[aria-disabled="true"]:hover,
-.slider-controls .slider-arrow[aria-disabled="true"]:active {
-  background: var(--bt-action-subtle);
-  box-shadow: var(--bt-shadow-raised);
-}
-.section-head > .slider-controls > .view-all {
-  display: inline-flex;
+.slider-controls .view-all {
+  display: flex;
   align-items: center;
-  min-height: 2.75rem;
-  padding: 0.5rem 1.5rem;
-  border: 1px solid var(--bt-border);
-  border-radius: 999px;
-  background: var(--bt-action-subtle);
-  box-shadow: var(--bt-shadow-raised);
-  color: var(--bt-action);
-  font-size: 0.9375rem;
+  padding: 0 var(--bt-space-3);
+  font-size: var(--bt-font-size-body);
+  font-weight: var(--bt-font-weight-strong);
+  line-height: 1;
   text-decoration: none;
   white-space: nowrap;
 }
-.section-head > .slider-controls > .view-all:hover {
-  background: var(--bt-action-subtle-hover);
+.slider-controls .slider-arrow:hover:not([aria-disabled="true"]),
+.slider-controls .view-all:hover {
+  background: var(--bt-quantity-hover);
 }
-.section-head > .slider-controls > .view-all:active {
-  background: var(--bt-action-subtle-selected);
-  box-shadow: var(--bt-shadow-inset);
+.slider-controls .slider-arrow:active:not([aria-disabled="true"]),
+.slider-controls .view-all:active {
+  background: var(--bt-neutral-active);
+  box-shadow: none;
+}
+.slider-controls .slider-arrow[aria-disabled="true"],
+.slider-controls .slider-arrow[aria-disabled="true"]:hover,
+.slider-controls .slider-arrow[aria-disabled="true"]:active {
+  background: transparent;
+  box-shadow: none;
+  cursor: default;
+}
+/* Only the chevron fades at an end, so the keyboard focus ring stays solid. */
+.slider-controls .slider-arrow[aria-disabled="true"] .icon {
+  opacity: 0.4;
+}
+/* The frame clips its children, so the focus ring is drawn inside, as in the basket. */
+.slider-controls :focus-visible {
+  position: relative;
+  outline-offset: -5px;
+  z-index: 1;
 }
 .video-frame {
   position: relative;

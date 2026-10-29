@@ -34,8 +34,16 @@ const copy = {
     progress: "Готовлю ответ…",
     sources: "Источники",
     data: "Обработка данных",
+    hint: "Не пишите в вопросе личные данные. Подробнее — в «Обработка данных».",
+    abilities:
+      "Помогу выбрать товар, расскажу о составе, способе приёма и цене. Например:",
+    examples: [
+      "Как принимать IMMUNOCOMPLEX?",
+      "Как принимать NEUROCOMPLEX KIDS?",
+      "Сколько стоит IMMUNOCOMPLEX KIDS?",
+    ],
     privacy:
-      "Для ответа ваш вопрос и последние сообщения этой вкладки будут переданы OpenAI. Не указывайте ФИО, контакты, документы или другие личные сведения. Мы не сохраняем переписку на сервере; OpenAI может хранить данные по своим правилам. Ответ не заменяет консультацию врача. Отправляя вопрос, вы соглашаетесь с такой обработкой.",
+      "Для ответа ваш вопрос и последние сообщения этой вкладки будут переданы OpenAI; для подбора товара текст вопроса также может передаваться OpenRouter. Не указывайте ФИО, контакты, документы или другие личные сведения. Мы не сохраняем переписку на сервере; OpenAI и OpenRouter могут хранить данные по своим правилам. Ответ не заменяет консультацию врача. Отправляя вопрос, вы соглашаетесь с такой обработкой.",
     retention:
       "Передаются вопрос, до четырёх завершённых пар сообщений и публичные сведения о товарах. Данные аккаунта, корзины и заказа не передаются. Контекст хранится только в памяти вкладки до сброса или 30 минут бездействия. Защитные идентификаторы хранятся до 24 часов, события без переписки и идентификаторов — до 7 дней. Проверка личных данных не гарантирует их полного обнаружения.",
     error:
@@ -64,8 +72,16 @@ const copy = {
     progress: "Javob tayyorlanmoqda…",
     sources: "Manbalar",
     data: "Maʼlumotlarni qayta ishlash",
+    hint: "Savolda shaxsiy maʼlumotlarni yozmang. Batafsil — «Maʼlumotlarni qayta ishlash» boʻlimida.",
+    abilities:
+      "Mahsulot tanlashga yordam beraman, tarkibi, qabul qilish usuli va narxi haqida aytib beraman. Masalan:",
+    examples: [
+      "IMMUNOCOMPLEX KIDS qanday qabul qilinadi?",
+      "IMMUNOCOMPLEX qanday qabul qilinadi?",
+      "IMMUNOCOMPLEX KIDS qancha turadi?",
+    ],
     privacy:
-      "Javob olish uchun savolingiz va shu varaqdagi oxirgi xabarlar OpenAIʼga yuboriladi. Ism-familiya, aloqa maʼlumotlari, hujjatlar yoki boshqa shaxsiy maʼlumotlarni kiritmang. Yozishmalarni serverda saqlamaymiz; OpenAI maʼlumotlarni oʻz qoidalari asosida saqlashi mumkin. Javob shifokor maslahatini almashtirmaydi. Savolni yuborish orqali bunday qayta ishlashga rozilik bildirasiz.",
+      "Javob olish uchun savolingiz va shu varaqdagi oxirgi xabarlar OpenAIʼga yuboriladi; mahsulot tanlash uchun savol matni OpenRouterʼga ham yuborilishi mumkin. Ism-familiya, aloqa maʼlumotlari, hujjatlar yoki boshqa shaxsiy maʼlumotlarni kiritmang. Yozishmalarni serverda saqlamaymiz; OpenAI va OpenRouter maʼlumotlarni oʻz qoidalari asosida saqlashi mumkin. Javob shifokor maslahatini almashtirmaydi. Savolni yuborish orqali bunday qayta ishlashga rozilik bildirasiz.",
     retention:
       "Savol, toʻrttagacha yakunlangan xabar juftligi va ochiq mahsulot maʼlumotlari yuboriladi. Hisob, savat va buyurtma maʼlumotlari yuborilmaydi. Kontekst faqat varaq xotirasida, tozalashgacha yoki 30 daqiqa harakatsizlikkacha saqlanadi. Himoya identifikatorlari 24 soatgacha, matn va identifikatorsiz hodisalar 7 kungacha saqlanadi. Shaxsiy maʼlumotlarni tekshirish ularning barchasini aniqlashni kafolatlamaydi.",
     error:
@@ -199,11 +215,12 @@ export default function Assistant({
     return () => window.clearInterval(interval);
   });
 
-  async function submit() {
+  /** Sends the draft, or an example question exactly as if it were typed. */
+  async function submit(text: string = draft) {
     // One message at a time: a new question waits until the pending answer,
     // its error or its cancellation (OM1).
     if (run.current) return;
-    const question = draft.trim();
+    const question = text.trim();
     if (!question || api.questionLength(question) > api.QUESTION_LIMIT) return;
     if (api.sensitive(question)) {
       setNotice(t.sensitive);
@@ -405,18 +422,49 @@ export default function Assistant({
         <strong>{context}</strong>
       </div>
       <div className="ai-body">
-        <p>{t.privacy}</p>
-        <details>
+        <p className="ai-hint">{t.hint}</p>
+        <details className="ai-data">
           <summary>{t.data}</summary>
+          <p>{t.privacy}</p>
           <p>{t.retention}</p>
-          <a
-            href="https://developers.openai.com/api/docs/guides/your-data"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            OpenAI
-          </a>
+          <p className="ai-links">
+            <a
+              href="https://developers.openai.com/api/docs/guides/your-data"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              OpenAI
+            </a>
+            <a
+              href="https://openrouter.ai/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              OpenRouter
+            </a>
+          </p>
         </details>
+        {entries.length === 0 && (
+          <div className="ai-examples">
+            <p>{t.abilities}</p>
+            <div className="suggestions">
+              {t.examples.map((example) => (
+                <button
+                  type="button"
+                  key={example}
+                  disabled={pending}
+                  onClick={() => {
+                    touched.current = Date.now();
+                    setDraft(example);
+                    void submit(example);
+                  }}
+                >
+                  {example}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <button onClick={() => reset()}>{t.reset}</button>
         {entries.map((entry) => (
           <section className="ai-answer" key={entry.response.request_id}>

@@ -1262,6 +1262,25 @@ h3 {
 .ai-body details {
   margin: 0.75rem 0;
 }
+.ai-hint {
+  font-size: 0.875rem;
+  color: var(--bt-text-muted);
+}
+.ai-data p {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+}
+.ai-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.ai-examples {
+  margin-bottom: 1rem;
+}
+.ai-examples .suggestions {
+  margin-top: 0.5rem;
+}
 
 .basket-notice {
   margin-block: 0.75rem;

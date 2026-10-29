@@ -3585,3 +3585,54 @@ test("chat product card is wide enough for the name and price on one line, no ov
     await expect(panel).not.toBeVisible();
   }
 });
+
+test("chat data notice is collapsed with OpenAI and OpenRouter; an example tap sends it (AS1)", async ({
+  page,
+}) => {
+  await fixture(page);
+  const { turns } = await mockConsultant(page);
+  for (const [lang, hint, data, first] of [
+    [
+      "ru",
+      "Не пишите в вопросе личные данные. Подробнее — в «Обработка данных».",
+      "Обработка данных",
+      "Как принимать IMMUNOCOMPLEX?",
+    ],
+    [
+      "uz",
+      "Savolda shaxsiy maʼlumotlarni yozmang. Batafsil — «Maʼlumotlarni qayta ishlash» boʻlimida.",
+      "Maʼlumotlarni qayta ishlash",
+      "IMMUNOCOMPLEX KIDS qanday qabul qilinadi?",
+    ],
+  ] as const) {
+    const panel = await openChat(page, lang);
+    await expect(panel.locator(".ai-hint")).toHaveText(hint);
+    const notice = panel.locator("details.ai-data");
+    await expect(notice.locator("summary")).toHaveText(data);
+    // The full notice is out of sight until the visitor opens it.
+    expect(await notice.evaluate((e) => (e as HTMLDetailsElement).open)).toBe(
+      false,
+    );
+    await expect(notice.locator("p").first()).toBeHidden();
+    await expect(notice).toContainText("OpenAI");
+    await expect(notice).toContainText("OpenRouter");
+    await notice.locator("summary").click();
+    await expect(notice.locator("p").first()).toBeVisible();
+    await expect(notice.locator("p").first()).toContainText("OpenRouter");
+    await expect(
+      notice.getByRole("link", { name: "OpenRouter" }),
+    ).toHaveAttribute("href", "https://openrouter.ai/privacy");
+    const examples = panel.locator(".ai-examples .suggestions button");
+    await expect(examples).toHaveCount(3);
+    await examples.first().click();
+    await expect(panel.locator(".ai-answer")).toContainText(`ANSWER ${first}`);
+    expect(turns.at(-1)?.question).toBe(first);
+    expect(turns.at(-1)?.language).toBe(lang);
+    await expect(panel.getByRole("textbox")).toHaveValue("");
+    // Examples step aside after the first message and return after reset.
+    await expect(panel.locator(".ai-examples")).toHaveCount(0);
+    await panel.locator(".ai-body > button").click();
+    await expect(examples).toHaveCount(3);
+    await noOverflow(page);
+  }
+});

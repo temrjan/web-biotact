@@ -48,6 +48,7 @@ const copy = {
     unavailable: "Сведения о товаре недоступны. Добавление остановлено.",
     shop: "Цена и наличие: Shop, проверено",
     shortcut: "Ctrl/Cmd+Enter — отправить. Enter — новая строка.",
+    count: "Символов",
   },
   uz: {
     title: "AI-maslahatchi",
@@ -77,6 +78,7 @@ const copy = {
     unavailable: "Mahsulot maʼlumotlari mavjud emas. Qoʻshish toʻxtatildi.",
     shop: "Narx va mavjudlik: Shop, tekshirildi",
     shortcut: "Ctrl/Cmd+Enter — yuborish. Enter — yangi qator.",
+    count: "Belgilar",
   },
 };
 interface Entry {
@@ -135,6 +137,8 @@ export default function Assistant({
   const alive = useRef(true);
   const visible = useRef(active);
   visible.current = active;
+  const draftLength = api.questionLength(draft);
+  const showCount = draftLength >= api.QUESTION_COUNTER_FROM;
 
   function cancel() {
     const current = run.current;
@@ -197,7 +201,7 @@ export default function Assistant({
 
   async function submit() {
     const question = draft.trim();
-    if (!question || Array.from(question).length > 2000) return;
+    if (!question || api.questionLength(question) > api.QUESTION_LIMIT) return;
     if (api.sensitive(question)) {
       setNotice(t.sensitive);
       return;
@@ -471,7 +475,8 @@ export default function Assistant({
         <textarea
           id="assistant-draft"
           value={draft}
-          maxLength={4000}
+          maxLength={api.QUESTION_LIMIT}
+          {...(showCount ? { "aria-describedby": "assistant-count" } : {})}
           onChange={(e) => {
             touched.current = Date.now();
             setDraft(e.target.value);
@@ -483,9 +488,17 @@ export default function Assistant({
             }
           }}
         />
+        {showCount && (
+          <p className="ai-count" id="assistant-count">
+            {t.count}: {draftLength} / {api.QUESTION_LIMIT}
+          </p>
+        )}
         <button
           type="submit"
-          disabled={!draft.trim() || Array.from(draft.trim()).length > 2000}
+          disabled={
+            !draft.trim() ||
+            api.questionLength(draft.trim()) > api.QUESTION_LIMIT
+          }
         >
           {t.send}
         </button>

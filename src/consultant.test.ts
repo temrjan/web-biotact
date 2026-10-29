@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { commercial, history, parseAnswer, type Turn } from "./consultant";
+import {
+  commercial,
+  history,
+  parseAnswer,
+  QUESTION_LIMIT,
+  questionLength,
+  type Turn,
+} from "./consultant";
 import { product } from "./catalogue";
 
 const turn: Turn = {
@@ -39,6 +46,12 @@ describe("consultant response boundary", () => {
       { context_expires_at: "not a date" },
     ])
       expect(() => parseAnswer({ ...raw, ...patch }, turn)).toThrow();
+  });
+  it("caps a question at 1,000 code points, counting an emoji or Cyrillic letter once", () => {
+    expect(QUESTION_LIMIT).toBe(1000);
+    expect(questionLength("Как принимать?")).toBe(14);
+    // One astral symbol is two UTF-16 units but one code point.
+    expect(questionLength("😀".repeat(3))).toBe(3);
   });
   it("keeps complete history pairs within both caps", () => {
     const pairs = Array.from({ length: 6 }, (_, i) => ({

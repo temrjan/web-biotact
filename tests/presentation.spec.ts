@@ -3365,3 +3365,82 @@ test("product page follows the Mini App: description, composition, disclaimer no
     await noOverflow(page);
   }
 });
+
+/** Mocked consultant API for the chat panel: "slow" waits for release, "fail" answers 503. */
+async function mockConsultant(page: Page, chatProducts = [products[4]]) {
+  const turns: Record<string, unknown>[] = [];
+  const waiting: (() => void)[] = [];
+  await page.route("**/api/v1/consultant/cancel", (r) =>
+    r.fulfill({ status: 204 }),
+  );
+  await page.route("**/api/v1/consultant/turns", async (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    turns.push(body);
+    if (body.question === "slow")
+      await new Promise<void>((resolve) => waiting.push(resolve));
+    if (body.question === "fail") {
+      await route
+        .fulfill({ status: 503, json: { code: "unavailable" } })
+        .catch(() => undefined);
+      return;
+    }
+    await route
+      .fulfill({
+        json: {
+          request_id: body.request_id,
+          context_revision: body.context_revision,
+          language: body.language,
+          status: "answer",
+          answer: `ANSWER ${String(body.question)}`,
+          sources: [],
+          cautions: [],
+          products: chatProducts,
+          open_product_id: null,
+          context_token: "synthetic-token",
+          context_expires_at: new Date(Date.now() + 1800000).toISOString(),
+          commercial_checked_at: new Date().toISOString(),
+        },
+      })
+      .catch(() => undefined);
+  });
+  return { turns, release: () => waiting.shift()?.() };
+}
+async function openChat(page: Page, lang: "ru" | "uz", width = 1440) {
+  await page.setViewportSize({ width, height: width >= 1000 ? 1000 : 844 });
+  await page.goto(`/#home?lang=${lang}`);
+  await page.locator(width >= 1000 ? ".sidebar .ai-nav" : ".top-ai").click();
+  const panel = page.locator(".assistant-panel");
+  await expect(panel).toBeVisible();
+  return panel;
+}
+
+test("chat question is capped at 1,000 characters with a counter near the cap (QL1)", async ({
+  page,
+}) => {
+  await fixture(page);
+  const { turns } = await mockConsultant(page);
+  const panel = await openChat(page, "ru");
+  const draft = panel.getByRole("textbox", { name: "Ваш вопрос", exact: true });
+  const send = panel.getByRole("button", { name: "Отправить", exact: true });
+  const counter = panel.locator(".ai-count");
+  await expect(draft).toHaveAttribute("maxlength", "1000");
+  await draft.fill("а".repeat(799));
+  await expect(counter).toHaveCount(0);
+  await draft.pressSequentially("б");
+  await expect(counter).toHaveText("Символов: 800 / 1000");
+  await expect(draft).toHaveAttribute("aria-describedby", "assistant-count");
+  // Typing past the cap stops at 1,000; Send stays available (no silent block).
+  await draft.fill("в".repeat(995));
+  await draft.pressSequentially("гггггггггг");
+  await expect(draft).toHaveValue("в".repeat(995) + "ггггг");
+  await expect(counter).toHaveText("Символов: 1000 / 1000");
+  await expect(send).toBeEnabled();
+  await send.click();
+  await expect(panel.locator(".ai-answer")).toHaveCount(1);
+  expect(Array.from(String(turns[0]?.question)).length).toBe(1000);
+  await expect(counter).toHaveCount(0);
+  await page.goto("/#home?lang=uz");
+  await page.locator(".sidebar .ai-nav").click();
+  await panel.getByRole("textbox").fill("x".repeat(900));
+  await expect(counter).toHaveText("Belgilar: 900 / 1000");
+});

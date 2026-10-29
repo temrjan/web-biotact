@@ -3444,3 +3444,59 @@ test("chat question is capped at 1,000 characters with a counter near the cap (Q
   await panel.getByRole("textbox").fill("x".repeat(900));
   await expect(counter).toHaveText("Belgilar: 900 / 1000");
 });
+
+test("chat sends one message at a time; answer, error and cancel enable Send again (OM1)", async ({
+  page,
+}) => {
+  await fixture(page);
+  const consultant = await mockConsultant(page);
+  const panel = await openChat(page, "ru");
+  const draft = panel.getByRole("textbox", { name: "Ваш вопрос", exact: true });
+  const send = panel.getByRole("button", { name: "Отправить", exact: true });
+  await draft.fill("slow");
+  await send.click();
+  await expect.poll(() => consultant.turns.length).toBe(1);
+  await expect(panel.getByRole("status")).toHaveText("Готовлю ответ…");
+  // While Luna answers: Send is disabled, Enter and examples do not send.
+  await draft.fill("second");
+  await expect(send).toBeDisabled();
+  await draft.press("Enter");
+  await draft.press("Control+Enter");
+  await expect(draft).toHaveValue("second");
+  await expect(panel.locator(".suggestions button").first()).toBeDisabled();
+  await page.waitForTimeout(300);
+  expect(consultant.turns).toHaveLength(1);
+  consultant.release();
+  await expect(panel.locator(".ai-answer")).toContainText("ANSWER slow");
+  await expect(send).toBeEnabled();
+  await draft.press("Enter");
+  await expect(panel.locator(".ai-answer")).toHaveCount(2);
+  expect(consultant.turns[1]?.question).toBe("second");
+  expect(consultant.turns[1]?.history).toEqual([
+    { question: "slow", answer: "ANSWER slow" },
+  ]);
+  // An error re-enables sending and keeps the question.
+  await draft.fill("fail");
+  await draft.press("Enter");
+  await expect(panel.getByRole("status")).toContainText("Ответ недоступен");
+  await expect(draft).toHaveValue("fail");
+  await expect(send).toBeEnabled();
+  // Cancel re-enables sending at once; the late answer is dropped.
+  await draft.fill("slow");
+  await draft.press("Enter");
+  await expect(send).toBeDisabled();
+  await panel.getByRole("button", { name: "Отменить", exact: true }).click();
+  await expect(send).toBeEnabled();
+  consultant.release();
+  await page.waitForTimeout(300);
+  await expect(panel.locator(".ai-answer")).toHaveCount(2);
+  // Closing the panel mid-answer does not leave Send disabled after reopening.
+  await draft.press("Enter");
+  await expect(send).toBeDisabled();
+  await panel.locator(".close-control").click();
+  await expect(panel).not.toBeVisible();
+  consultant.release();
+  await page.locator(".sidebar .ai-nav").click();
+  await expect(send).toBeEnabled();
+  await expect(panel.locator(".ai-answer")).toHaveCount(2);
+});

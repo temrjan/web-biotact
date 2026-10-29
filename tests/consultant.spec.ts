@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { fixture, products } from "./catalogue.fixture";
 
 for (const language of ["ru", "uz"])
-  test(`consultant ${language} drops late replies and resets context while ordinary browsing stays available`, async ({
+  test(`consultant ${language} sends one message at a time, drops late replies and resets context while ordinary browsing stays available`, async ({
     page,
   }) => {
     await fixture(page);
@@ -42,8 +42,19 @@ for (const language of ["ru", "uz"])
     await draft.fill("slow");
     await draft.press("Control+Enter");
     await expect.poll(() => requests.length).toBe(1);
+    // One message at a time (OM1): a second send waits; reset drops the late reply.
     await draft.fill("current");
-    await draft.press("Control+Enter");
+    await draft.press("Enter");
+    await page.waitForTimeout(100);
+    expect(requests).toHaveLength(1);
+    await panel
+      .getByRole("button", {
+        name: language === "ru" ? "Начать заново" : "Qayta boshlash",
+        exact: true,
+      })
+      .click();
+    await draft.fill("current");
+    await draft.press("Enter");
     await expect(panel.locator(".ai-answer")).toContainText("CURRENT");
     await page.waitForTimeout(500);
     await expect(panel).not.toContainText("STALE");

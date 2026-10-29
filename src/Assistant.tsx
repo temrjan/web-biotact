@@ -200,6 +200,9 @@ export default function Assistant({
   });
 
   async function submit() {
+    // One message at a time: a new question waits until the pending answer,
+    // its error or its cancellation (OM1).
+    if (run.current) return;
     const question = draft.trim();
     if (!question || api.questionLength(question) > api.QUESTION_LIMIT) return;
     if (api.sensitive(question)) {
@@ -270,9 +273,12 @@ export default function Assistant({
         setNotice(t.expired);
       } else setNotice(code === "sensitive_input" ? t.sensitive : t.error);
     } finally {
-      if (alive.current && run.current?.turn.request_id === turn.request_id) {
-        run.current = null;
-        setPending(false);
+      if (alive.current) {
+        if (run.current?.turn.request_id === turn.request_id)
+          run.current = null;
+        // Whatever stopped this run (answer, error, cancel, reset or hiding the
+        // panel), Send is enabled again once no run is in flight (OM1).
+        if (run.current === null) setPending(false);
       }
     }
   }
@@ -496,6 +502,7 @@ export default function Assistant({
         <button
           type="submit"
           disabled={
+            pending ||
             !draft.trim() ||
             api.questionLength(draft.trim()) > api.QUESTION_LIMIT
           }

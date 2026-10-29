@@ -53,6 +53,11 @@ describe("consultant response boundary", () => {
     // One astral symbol is two UTF-16 units but one code point.
     expect(questionLength("😀".repeat(3))).toBe(3);
   });
+  it("accepts a long answer: 20,000 characters is shown, not an error", () => {
+    const answer = "Ответ ".repeat(3334).slice(0, 20000);
+    expect(parseAnswer({ ...raw, answer }, turn).answer).toBe(answer);
+    expect(() => parseAnswer({ ...raw, answer: " " }, turn)).toThrow();
+  });
   it("keeps complete history pairs within both caps", () => {
     const pairs = Array.from({ length: 6 }, (_, i) => ({
       question: String(i),

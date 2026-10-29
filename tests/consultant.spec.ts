@@ -89,3 +89,39 @@ for (const language of ["ru", "uz"])
       ]),
     ).toEqual([[BASKET_STORAGE_KEY], 0]);
   });
+
+test("consultant shows a 20,000-character answer instead of an error", async ({
+  page,
+}) => {
+  await fixture(page);
+  const answer = "Длинный ответ. ".repeat(1334).slice(0, 20000);
+  await page.route("**/api/v1/consultant/turns", async (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({
+      json: {
+        request_id: body.request_id,
+        context_revision: body.context_revision,
+        language: "ru",
+        status: "answer",
+        answer,
+        sources: [],
+        cautions: [],
+        products: [],
+        open_product_id: null,
+        context_token: "synthetic-token",
+        context_expires_at: new Date(Date.now() + 1800000).toISOString(),
+        commercial_checked_at: null,
+      },
+    });
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/#home?lang=ru");
+  await page.locator(".sidebar .ai-nav").click();
+  const panel = page.locator(".assistant-panel");
+  await panel.getByRole("textbox").fill("long");
+  await panel.getByRole("textbox").press("Enter");
+  const shown = panel.locator(".ai-answer .ai-plain");
+  await expect(shown).toHaveCount(1);
+  expect(await shown.textContent()).toBe(answer);
+  await expect(panel.getByRole("status")).not.toContainText("Ответ недоступен");
+});

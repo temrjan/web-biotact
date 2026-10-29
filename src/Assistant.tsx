@@ -47,7 +47,7 @@ const copy = {
       "Цена или доступность изменились. Проверьте карточку и нажмите «В корзину» снова.",
     unavailable: "Сведения о товаре недоступны. Добавление остановлено.",
     shop: "Цена и наличие: Shop, проверено",
-    shortcut: "Ctrl/Cmd+Enter — отправить. Enter — новая строка.",
+    shortcut: "Enter — отправить. Shift+Enter — новая строка.",
     count: "Символов",
   },
   uz: {
@@ -77,7 +77,7 @@ const copy = {
       "Narx yoki mavjudlik oʻzgardi. Kartani tekshirib, «Savatga» tugmasini yana bosing.",
     unavailable: "Mahsulot maʼlumotlari mavjud emas. Qoʻshish toʻxtatildi.",
     shop: "Narx va mavjudlik: Shop, tekshirildi",
-    shortcut: "Ctrl/Cmd+Enter — yuborish. Enter — yangi qator.",
+    shortcut: "Enter — yuborish. Shift+Enter — yangi qator.",
     count: "Belgilar",
   },
 };
@@ -487,11 +487,20 @@ export default function Assistant({
             touched.current = Date.now();
             setDraft(e.target.value);
           }}
+          enterKeyHint="send"
           onKeyDown={(e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-              e.preventDefault();
-              void submit();
-            }
+            // Enter sends; Shift+Enter keeps the native new line. An Enter that
+            // confirms IME composition (keyCode 229 in Safari) never sends.
+            if (
+              e.key !== "Enter" ||
+              e.shiftKey ||
+              e.altKey ||
+              e.nativeEvent.isComposing ||
+              e.keyCode === 229
+            )
+              return;
+            e.preventDefault();
+            void submit();
           }}
         />
         {showCount && (

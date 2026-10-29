@@ -1105,7 +1105,8 @@ test("AI draft stays local until explicit send and resets on semantic navigation
   await draft.fill(
     "Локальный черновик secret-question https://example.test/private",
   );
-  await draft.press("Enter");
+  // Shift+Enter is a new line, not a send (EN1).
+  await draft.press("Shift+Enter");
   await expect(
     panel.getByRole("button", { name: "Отправить", exact: true }),
   ).toBeEnabled();
@@ -1147,7 +1148,7 @@ test("AI draft stays local until explicit send and resets on semantic navigation
   await expect(primary).toHaveCSS("color", "rgb(255, 255, 255)");
   const accountBaseline = requests.length;
   await panel.getByRole("textbox").fill("only local");
-  await panel.getByRole("textbox").press("Enter");
+  await panel.getByRole("textbox").press("Shift+Enter");
   expect(requests.length).toBe(accountBaseline);
   await page.locator(".basket-button").click();
   await dialogCount(page, 1);
@@ -3499,4 +3500,44 @@ test("chat sends one message at a time; answer, error and cancel enable Send aga
   await page.locator(".sidebar .ai-nav").click();
   await expect(send).toBeEnabled();
   await expect(panel.locator(".ai-answer")).toHaveCount(2);
+});
+
+test("chat Enter sends, Shift+Enter adds a line, IME composition does not send (EN1)", async ({
+  page,
+}) => {
+  await fixture(page);
+  const { turns } = await mockConsultant(page);
+  for (const [lang, hint] of [
+    ["ru", "Enter — отправить. Shift+Enter — новая строка."],
+    ["uz", "Enter — yuborish. Shift+Enter — yangi qator."],
+  ] as const) {
+    const panel = await openChat(page, lang);
+    await expect(panel.locator(".ai-compose .muted")).toContainText(hint);
+    const draft = panel.getByRole("textbox");
+    await expect(draft).toHaveAttribute("enterkeyhint", "send");
+    await draft.fill("line one");
+    await draft.press("Shift+Enter");
+    await draft.pressSequentially("line two");
+    await expect(draft).toHaveValue("line one\nline two");
+    expect(turns).toHaveLength(lang === "ru" ? 0 : 1);
+    // A composing Enter (IME confirmation) is not a send.
+    await draft.dispatchEvent("keydown", {
+      key: "Enter",
+      isComposing: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    await draft.dispatchEvent("keydown", {
+      key: "Enter",
+      keyCode: 229,
+      bubbles: true,
+      cancelable: true,
+    });
+    await page.waitForTimeout(200);
+    expect(turns).toHaveLength(lang === "ru" ? 0 : 1);
+    await draft.press("Enter");
+    await expect(panel.locator(".ai-answer")).toHaveCount(1);
+    expect(turns.at(-1)?.question).toBe("line one\nline two");
+    await expect(draft).toHaveValue("");
+  }
 });

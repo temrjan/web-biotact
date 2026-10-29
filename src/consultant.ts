@@ -168,7 +168,8 @@ export function parseAnswer(raw: unknown, turn: Turn): Answer {
     context_revision: turn.context_revision,
     language: turn.language,
     status: d.status as Answer["status"],
-    answer: text(d.answer),
+    // The API sets no answer length cap (Shop #172); a long answer is shown.
+    answer: text(d.answer, Number.POSITIVE_INFINITY),
     sources: ss,
     cautions: d.cautions as string[],
     products: ps,

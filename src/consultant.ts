@@ -39,6 +39,13 @@ export interface Answer {
   context_expires_at: string;
   commercial_checked_at: string | null;
 }
+/** Longest question the consultant accepts, in Unicode code points (API cap). */
+export const QUESTION_LIMIT = 1000;
+/** The draft counter appears from this many code points. */
+export const QUESTION_COUNTER_FROM = 800;
+export function questionLength(value: string): number {
+  return Array.from(value).length;
+}
 export class ConsultantError extends Error {
   constructor(public code: string) {
     super(code);

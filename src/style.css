@@ -942,6 +942,13 @@ h3 {
 .ai-compose button {
   margin-top: 0.75rem;
 }
+.ai-count {
+  margin-top: 0.375rem;
+  text-align: right;
+  font-size: 0.875rem;
+  color: var(--bt-text-muted);
+  font-variant-numeric: tabular-nums;
+}
 .ai-compose .muted {
   font-size: 0.875rem;
   margin-top: 0.5rem;
@@ -1241,13 +1248,38 @@ h3 {
   border-left: 3px solid #a67b35;
   padding-left: 0.75rem;
 }
+/* A chat card takes the whole panel row (two side by side only from about
+   34rem of panel width) so the product name and price keep one line (CW1). */
 .assistant-cards {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 16.5rem), 1fr));
   gap: 0.75rem;
+}
+.assistant-cards .card-media {
+  aspect-ratio: auto;
+  height: 12rem;
 }
 .ai-body details {
   margin: 0.75rem 0;
+}
+.ai-hint {
+  font-size: 0.875rem;
+  color: var(--bt-text-muted);
+}
+.ai-data p {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+}
+.ai-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.ai-examples {
+  margin-bottom: 1rem;
+}
+.ai-examples .suggestions {
+  margin-top: 0.5rem;
 }
 
 .basket-notice {

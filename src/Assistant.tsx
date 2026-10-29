@@ -34,8 +34,16 @@ const copy = {
     progress: "Готовлю ответ…",
     sources: "Источники",
     data: "Обработка данных",
+    hint: "Не пишите в вопросе личные данные. Подробнее — в «Обработка данных».",
+    abilities:
+      "Помогу выбрать товар, расскажу о составе, способе приёма и цене. Например:",
+    examples: [
+      "Как принимать IMMUNOCOMPLEX?",
+      "Как принимать NEUROCOMPLEX KIDS?",
+      "Сколько стоит IMMUNOCOMPLEX KIDS?",
+    ],
     privacy:
-      "Для ответа ваш вопрос и последние сообщения этой вкладки будут переданы OpenAI. Не указывайте ФИО, контакты, документы или другие личные сведения. Мы не сохраняем переписку на сервере; OpenAI может хранить данные по своим правилам. Ответ не заменяет консультацию врача. Отправляя вопрос, вы соглашаетесь с такой обработкой.",
+      "Для ответа ваш вопрос и последние сообщения этой вкладки будут переданы OpenAI; для подбора товара текст вопроса также может передаваться OpenRouter. Не указывайте ФИО, контакты, документы или другие личные сведения. Мы не сохраняем переписку на сервере; OpenAI и OpenRouter могут хранить данные по своим правилам. Ответ не заменяет консультацию врача. Отправляя вопрос, вы соглашаетесь с такой обработкой.",
     retention:
       "Передаются вопрос, до четырёх завершённых пар сообщений и публичные сведения о товарах. Данные аккаунта, корзины и заказа не передаются. Контекст хранится только в памяти вкладки до сброса или 30 минут бездействия. Защитные идентификаторы хранятся до 24 часов, события без переписки и идентификаторов — до 7 дней. Проверка личных данных не гарантирует их полного обнаружения.",
     error:
@@ -47,7 +55,8 @@ const copy = {
       "Цена или доступность изменились. Проверьте карточку и нажмите «В корзину» снова.",
     unavailable: "Сведения о товаре недоступны. Добавление остановлено.",
     shop: "Цена и наличие: Shop, проверено",
-    shortcut: "Ctrl/Cmd+Enter — отправить. Enter — новая строка.",
+    shortcut: "Enter — отправить. Shift+Enter — новая строка.",
+    count: "Символов",
   },
   uz: {
     title: "AI-maslahatchi",
@@ -63,8 +72,16 @@ const copy = {
     progress: "Javob tayyorlanmoqda…",
     sources: "Manbalar",
     data: "Maʼlumotlarni qayta ishlash",
+    hint: "Savolda shaxsiy maʼlumotlarni yozmang. Batafsil — «Maʼlumotlarni qayta ishlash» boʻlimida.",
+    abilities:
+      "Mahsulot tanlashga yordam beraman, tarkibi, qabul qilish usuli va narxi haqida aytib beraman. Masalan:",
+    examples: [
+      "IMMUNOCOMPLEX KIDS qanday qabul qilinadi?",
+      "IMMUNOCOMPLEX qanday qabul qilinadi?",
+      "IMMUNOCOMPLEX KIDS qancha turadi?",
+    ],
     privacy:
-      "Javob olish uchun savolingiz va shu varaqdagi oxirgi xabarlar OpenAIʼga yuboriladi. Ism-familiya, aloqa maʼlumotlari, hujjatlar yoki boshqa shaxsiy maʼlumotlarni kiritmang. Yozishmalarni serverda saqlamaymiz; OpenAI maʼlumotlarni oʻz qoidalari asosida saqlashi mumkin. Javob shifokor maslahatini almashtirmaydi. Savolni yuborish orqali bunday qayta ishlashga rozilik bildirasiz.",
+      "Javob olish uchun savolingiz va shu varaqdagi oxirgi xabarlar OpenAIʼga yuboriladi; mahsulot tanlash uchun savol matni OpenRouterʼga ham yuborilishi mumkin. Ism-familiya, aloqa maʼlumotlari, hujjatlar yoki boshqa shaxsiy maʼlumotlarni kiritmang. Yozishmalarni serverda saqlamaymiz; OpenAI va OpenRouter maʼlumotlarni oʻz qoidalari asosida saqlashi mumkin. Javob shifokor maslahatini almashtirmaydi. Savolni yuborish orqali bunday qayta ishlashga rozilik bildirasiz.",
     retention:
       "Savol, toʻrttagacha yakunlangan xabar juftligi va ochiq mahsulot maʼlumotlari yuboriladi. Hisob, savat va buyurtma maʼlumotlari yuborilmaydi. Kontekst faqat varaq xotirasida, tozalashgacha yoki 30 daqiqa harakatsizlikkacha saqlanadi. Himoya identifikatorlari 24 soatgacha, matn va identifikatorsiz hodisalar 7 kungacha saqlanadi. Shaxsiy maʼlumotlarni tekshirish ularning barchasini aniqlashni kafolatlamaydi.",
     error:
@@ -76,7 +93,8 @@ const copy = {
       "Narx yoki mavjudlik oʻzgardi. Kartani tekshirib, «Savatga» tugmasini yana bosing.",
     unavailable: "Mahsulot maʼlumotlari mavjud emas. Qoʻshish toʻxtatildi.",
     shop: "Narx va mavjudlik: Shop, tekshirildi",
-    shortcut: "Ctrl/Cmd+Enter — yuborish. Enter — yangi qator.",
+    shortcut: "Enter — yuborish. Shift+Enter — yangi qator.",
+    count: "Belgilar",
   },
 };
 interface Entry {
@@ -135,6 +153,8 @@ export default function Assistant({
   const alive = useRef(true);
   const visible = useRef(active);
   visible.current = active;
+  const draftLength = api.questionLength(draft);
+  const showCount = draftLength >= api.QUESTION_COUNTER_FROM;
 
   function cancel() {
     const current = run.current;
@@ -195,9 +215,13 @@ export default function Assistant({
     return () => window.clearInterval(interval);
   });
 
-  async function submit() {
-    const question = draft.trim();
-    if (!question || Array.from(question).length > 2000) return;
+  /** Sends the draft, or an example question exactly as if it were typed. */
+  async function submit(text: string = draft) {
+    // One message at a time: a new question waits until the pending answer,
+    // its error or its cancellation (OM1).
+    if (run.current) return;
+    const question = text.trim();
+    if (!question || api.questionLength(question) > api.QUESTION_LIMIT) return;
     if (api.sensitive(question)) {
       setNotice(t.sensitive);
       return;
@@ -266,9 +290,12 @@ export default function Assistant({
         setNotice(t.expired);
       } else setNotice(code === "sensitive_input" ? t.sensitive : t.error);
     } finally {
-      if (alive.current && run.current?.turn.request_id === turn.request_id) {
-        run.current = null;
-        setPending(false);
+      if (alive.current) {
+        if (run.current?.turn.request_id === turn.request_id)
+          run.current = null;
+        // Whatever stopped this run (answer, error, cancel, reset or hiding the
+        // panel), Send is enabled again once no run is in flight (OM1).
+        if (run.current === null) setPending(false);
       }
     }
   }
@@ -395,18 +422,49 @@ export default function Assistant({
         <strong>{context}</strong>
       </div>
       <div className="ai-body">
-        <p>{t.privacy}</p>
-        <details>
+        <p className="ai-hint">{t.hint}</p>
+        <details className="ai-data">
           <summary>{t.data}</summary>
+          <p>{t.privacy}</p>
           <p>{t.retention}</p>
-          <a
-            href="https://developers.openai.com/api/docs/guides/your-data"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            OpenAI
-          </a>
+          <p className="ai-links">
+            <a
+              href="https://developers.openai.com/api/docs/guides/your-data"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              OpenAI
+            </a>
+            <a
+              href="https://openrouter.ai/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              OpenRouter
+            </a>
+          </p>
         </details>
+        {entries.length === 0 && (
+          <div className="ai-examples">
+            <p>{t.abilities}</p>
+            <div className="suggestions">
+              {t.examples.map((example) => (
+                <button
+                  type="button"
+                  key={example}
+                  disabled={pending}
+                  onClick={() => {
+                    touched.current = Date.now();
+                    setDraft(example);
+                    void submit(example);
+                  }}
+                >
+                  {example}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <button onClick={() => reset()}>{t.reset}</button>
         {entries.map((entry) => (
           <section className="ai-answer" key={entry.response.request_id}>
@@ -471,21 +529,40 @@ export default function Assistant({
         <textarea
           id="assistant-draft"
           value={draft}
-          maxLength={4000}
+          maxLength={api.QUESTION_LIMIT}
+          {...(showCount ? { "aria-describedby": "assistant-count" } : {})}
           onChange={(e) => {
             touched.current = Date.now();
             setDraft(e.target.value);
           }}
+          enterKeyHint="send"
           onKeyDown={(e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-              e.preventDefault();
-              void submit();
-            }
+            // Enter sends; Shift+Enter keeps the native new line. An Enter that
+            // confirms IME composition (keyCode 229 in Safari) never sends.
+            if (
+              e.key !== "Enter" ||
+              e.shiftKey ||
+              e.altKey ||
+              e.nativeEvent.isComposing ||
+              e.keyCode === 229
+            )
+              return;
+            e.preventDefault();
+            void submit();
           }}
         />
+        {showCount && (
+          <p className="ai-count" id="assistant-count">
+            {t.count}: {draftLength} / {api.QUESTION_LIMIT}
+          </p>
+        )}
         <button
           type="submit"
-          disabled={!draft.trim() || Array.from(draft.trim()).length > 2000}
+          disabled={
+            pending ||
+            !draft.trim() ||
+            api.questionLength(draft.trim()) > api.QUESTION_LIMIT
+          }
         >
           {t.send}
         </button>

@@ -3541,3 +3541,47 @@ test("chat Enter sends, Shift+Enter adds a line, IME composition does not send (
     await expect(draft).toHaveValue("");
   }
 });
+
+test("chat product card is wide enough for the name and price on one line, no overflow (CW1)", async ({
+  page,
+}) => {
+  await fixture(page);
+  const base = products[4],
+    other = products[5];
+  if (!base || !other) throw new Error("Missing chat card fixtures");
+  await mockConsultant(page, [
+    { ...base, name: "BIFOLAK® ACTIVE", price: "75500.00" },
+    { ...other, name: "OPHTALMOCOMPLEX®", price: "112233.00" },
+  ]);
+  const lines = (node: Locator) =>
+    node.evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      return new Set(
+        Array.from(range.getClientRects()).map((r) => Math.round(r.top)),
+      ).size;
+    });
+  for (const width of [1440, 390, 320]) {
+    const panel = await openChat(page, "ru", width);
+    await panel.getByRole("textbox").fill("card");
+    await panel.getByRole("textbox").press("Enter");
+    const cards = panel.locator(".assistant-cards .product-card");
+    await expect(cards).toHaveCount(2);
+    const body = await panel.locator(".ai-body").boundingBox();
+    if (!body) throw new Error("Missing chat body");
+    for (const card of await cards.all()) {
+      const box = await card.boundingBox();
+      if (!box) throw new Error("Missing chat card");
+      // One card per row inside the panel's text column.
+      expect(box.width).toBeGreaterThan(body.width - 48);
+      expect(await lines(card.locator("h3 a"))).toBe(1);
+      expect(await lines(card.locator(".price strong"))).toBe(1);
+      expect(await card.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(
+        true,
+      );
+    }
+    await noOverflow(page);
+    await page.keyboard.press("Escape");
+    await expect(panel).not.toBeVisible();
+  }
+});

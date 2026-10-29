@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { fixture, products } from "./catalogue.fixture";
+import { BASKET_STORAGE_KEY } from "../src/guestBasket";
 
 for (const language of ["ru", "uz"])
   test(`consultant ${language} sends one message at a time, drops late replies and resets context while ordinary browsing stays available`, async ({
@@ -80,7 +81,11 @@ for (const language of ["ru", "uz"])
     expect(requests[3]?.context_token).toBeNull();
     expect(requests[3]?.history).toEqual([]);
     expect(requests[3]?.page_product_id).toBe(4004);
+    // The remembered guest basket is the only stored value; no consultant data.
     expect(
-      await page.evaluate(() => [localStorage.length, sessionStorage.length]),
-    ).toEqual([0, 0]);
+      await page.evaluate(() => [
+        Object.keys(localStorage),
+        sessionStorage.length,
+      ]),
+    ).toEqual([[BASKET_STORAGE_KEY], 0]);
   });

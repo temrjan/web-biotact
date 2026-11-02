@@ -238,13 +238,18 @@ export function commercial(p: Product): string {
     p.available_sizes,
   ]);
 }
-export function history(pairs: Pair[]): Pair[] {
-  const result = pairs.slice(-4);
-  while (
-    result.reduce((n, p) => n + p.question.length + p.answer.length, 0) > 12000
-  )
-    result.shift();
-  return result;
+/** Every completed pair of the tab conversation, oldest first, with no count or length cut. */
+export function history(pairs: readonly Pair[]): Pair[] {
+  return [...pairs];
+}
+/** Which panel notice an error code shows; every other code keeps the general one. */
+export type ErrorNotice = "expired" | "sensitive" | "busy" | "error";
+export function errorNotice(code: string): ErrorNotice {
+  if (code === "context_invalid" || code === "context_expired")
+    return "expired";
+  if (code === "sensitive_input") return "sensitive";
+  if (code === "answer_unavailable") return "busy";
+  return "error";
 }
 
 export function sensitive(value: string): boolean {

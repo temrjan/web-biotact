@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   commercial,
+  errorNotice,
   history,
   parseAnswer,
   QUESTION_LIMIT,
@@ -58,13 +59,36 @@ describe("consultant response boundary", () => {
     expect(parseAnswer({ ...raw, answer }, turn).answer).toBe(answer);
     expect(() => parseAnswer({ ...raw, answer: " " }, turn)).toThrow();
   });
-  it("keeps complete history pairs within both caps", () => {
+  it("sends every completed pair of the tab in order, with no count or length cut", () => {
     const pairs = Array.from({ length: 6 }, (_, i) => ({
       question: String(i),
       answer: "x".repeat(4000),
     }));
-    expect(history(pairs).map((p) => p.question)).toEqual(["4", "5"]);
-    expect(history(pairs.slice(0, 2))).toHaveLength(2);
+    expect(history(pairs)).toEqual(pairs);
+    expect(history(pairs).map((p) => p.question)).toEqual([
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+    ]);
+    expect(history([])).toEqual([]);
+  });
+  it("maps answer_unavailable to the busy notice and keeps today's notices for other codes", () => {
+    expect(errorNotice("answer_unavailable")).toBe("busy");
+    expect(errorNotice("context_invalid")).toBe("expired");
+    expect(errorNotice("context_expired")).toBe("expired");
+    expect(errorNotice("sensitive_input")).toBe("sensitive");
+    for (const code of [
+      "unavailable",
+      "invalid_answer",
+      "invalid_input",
+      "knowledge_unavailable",
+      "provider_unavailable",
+      "configuration_unavailable",
+    ])
+      expect(errorNotice(code)).toBe("error");
   });
   it("detects commercial and size changes without treating descriptions as purchase changes", () => {
     const p = product({

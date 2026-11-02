@@ -43,11 +43,12 @@ const copy = {
       "Сколько стоит IMMUNOCOMPLEX KIDS?",
     ],
     privacy:
-      "Для ответа ваш вопрос и последние сообщения этой вкладки будут переданы OpenAI; для подбора товара текст вопроса также может передаваться OpenRouter. Не указывайте ФИО, контакты, документы или другие личные сведения. OpenAI и OpenRouter могут хранить данные по своим правилам. Ответ не заменяет консультацию врача. Отправляя вопрос, вы соглашаетесь с такой обработкой.",
+      "Для ответа ваш вопрос и все сообщения этой вкладки будут переданы OpenAI; для подбора товара текст вопроса также может передаваться OpenRouter. Не указывайте ФИО, контакты, документы или другие личные сведения. OpenAI и OpenRouter могут хранить данные по своим правилам. Ответ не заменяет консультацию врача. Отправляя вопрос, вы соглашаетесь с такой обработкой.",
     retention:
-      "Передаются вопрос, до четырёх завершённых пар сообщений и публичные сведения о товарах. Данные аккаунта, корзины и заказа не передаются. Контекст хранится только в памяти вкладки до сброса или 30 минут бездействия. Защитные идентификаторы хранятся до 24 часов, события без переписки и идентификаторов — до 7 дней. Проверка личных данных не гарантирует их полного обнаружения.",
+      "Передаются вопрос, предыдущие сообщения этой вкладки и публичные сведения о товарах. Данные аккаунта, корзины и заказа не передаются. Защитные идентификаторы хранятся до 24 часов, события без переписки и идентификаторов — до 7 дней. Проверка личных данных не гарантирует их полного обнаружения.",
     error:
       "Ответ недоступен. Измените вопрос или попробуйте отправить его снова. Каталог продолжает работать.",
+    busy: "Консультант сейчас временно не может ответить. Ваш вопрос сохранён — отправьте его ещё раз чуть позже.",
     expired:
       "Контекст истёк или недействителен. Вопрос сохранён: отправьте его снова явно.",
     sensitive: "Уберите контакты, документы и секретные сведения из вопроса.",
@@ -81,11 +82,12 @@ const copy = {
       "IMMUNOCOMPLEX KIDS qancha turadi?",
     ],
     privacy:
-      "Javob olish uchun savolingiz va shu varaqdagi oxirgi xabarlar OpenAIʼga yuboriladi; mahsulot tanlash uchun savol matni OpenRouterʼga ham yuborilishi mumkin. Ism-familiya, aloqa maʼlumotlari, hujjatlar yoki boshqa shaxsiy maʼlumotlarni kiritmang. OpenAI va OpenRouter maʼlumotlarni oʻz qoidalari asosida saqlashi mumkin. Javob shifokor maslahatini almashtirmaydi. Savolni yuborish orqali bunday qayta ishlashga rozilik bildirasiz.",
+      "Javob olish uchun savolingiz va shu varaqdagi barcha xabarlar OpenAIʼga yuboriladi; mahsulot tanlash uchun savol matni OpenRouterʼga ham yuborilishi mumkin. Ism-familiya, aloqa maʼlumotlari, hujjatlar yoki boshqa shaxsiy maʼlumotlarni kiritmang. OpenAI va OpenRouter maʼlumotlarni oʻz qoidalari asosida saqlashi mumkin. Javob shifokor maslahatini almashtirmaydi. Savolni yuborish orqali bunday qayta ishlashga rozilik bildirasiz.",
     retention:
-      "Savol, toʻrttagacha yakunlangan xabar juftligi va ochiq mahsulot maʼlumotlari yuboriladi. Hisob, savat va buyurtma maʼlumotlari yuborilmaydi. Kontekst faqat varaq xotirasida, tozalashgacha yoki 30 daqiqa harakatsizlikkacha saqlanadi. Himoya identifikatorlari 24 soatgacha, matn va identifikatorsiz hodisalar 7 kungacha saqlanadi. Shaxsiy maʼlumotlarni tekshirish ularning barchasini aniqlashni kafolatlamaydi.",
+      "Savol, shu varaqdagi oldingi xabarlar va ochiq mahsulot maʼlumotlari yuboriladi. Hisob, savat va buyurtma maʼlumotlari yuborilmaydi. Himoya identifikatorlari 24 soatgacha, matn va identifikatorsiz hodisalar 7 kungacha saqlanadi. Shaxsiy maʼlumotlarni tekshirish ularning barchasini aniqlashni kafolatlamaydi.",
     error:
       "Javob mavjud emas. Savolni oʻzgartiring yoki qayta yuboring. Katalog ishlashda davom etadi.",
+    busy: "Maslahatchi hozircha javob bera olmayapti. Savolingiz saqlandi — birozdan keyin qayta yuboring.",
     expired:
       "Kontekst eskirgan yoki notoʻgʻri. Savol saqlandi: uni qayta yuboring.",
     sensitive: "Savoldan aloqa, hujjat va maxfiy maʼlumotlarni olib tashlang.",
@@ -261,7 +263,7 @@ export default function Assistant({
       )
         return;
       token.current = response.context_token;
-      setEntries((old) => [...old, { question, response }].slice(-4));
+      setEntries((old) => [...old, { question, response }]);
       // An empty-selection response must remove stale cards. Same-subject source-only
       // preservation is encoded by the server; display only the latest returned cards.
       setCards(response.products);
@@ -283,12 +285,13 @@ export default function Assistant({
         run.current?.turn.request_id !== turn.request_id
       )
         return;
-      const code =
-        error instanceof api.ConsultantError ? error.code : "unavailable";
-      if (code === "context_invalid" || code === "context_expired") {
-        reset(true);
-        setNotice(t.expired);
-      } else setNotice(code === "sensitive_input" ? t.sensitive : t.error);
+      // The token, the entries and the typed question stay as they were, so the
+      // visitor can send again from the same state; an invalid context resets.
+      const notice = api.errorNotice(
+        error instanceof api.ConsultantError ? error.code : "unavailable",
+      );
+      if (notice === "expired") reset(true);
+      setNotice(t[notice]);
     } finally {
       if (alive.current) {
         if (run.current?.turn.request_id === turn.request_id)

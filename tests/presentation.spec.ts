@@ -3367,7 +3367,15 @@ test("product page follows the Mini App: description, composition, disclaimer no
   }
 });
 
-/** Mocked consultant API for the chat panel: "slow" waits for release, "fail" answers 503. */
+/** Questions the mocked consultant answers with the API's error body (`router.error`). */
+const apiErrors: Record<string, { status: number; code: string }> = {
+  busy: { status: 503, code: "answer_unavailable" },
+  invalid: { status: 400, code: "context_invalid" },
+};
+/**
+ * Mocked consultant API for the chat panel: "slow" waits for release, "fail" answers
+ * 503 `unavailable`; the questions of `apiErrors` answer their error.
+ */
 async function mockConsultant(page: Page, chatProducts = [products[4]]) {
   const turns: Record<string, unknown>[] = [];
   const waiting: (() => void)[] = [];
@@ -3382,6 +3390,20 @@ async function mockConsultant(page: Page, chatProducts = [products[4]]) {
     if (body.question === "fail") {
       await route
         .fulfill({ status: 503, json: { code: "unavailable" } })
+        .catch(() => undefined);
+      return;
+    }
+    const error = apiErrors[String(body.question)];
+    if (error) {
+      await route
+        .fulfill({
+          status: error.status,
+          json: {
+            request_id: body.request_id,
+            code: error.code,
+            retryable: error.status === 503,
+          },
+        })
         .catch(() => undefined);
       return;
     }
@@ -3635,4 +3657,147 @@ test("chat data notice is collapsed with OpenAI and OpenRouter; an example tap s
     await expect(examples).toHaveCount(3);
     await noOverflow(page);
   }
+});
+
+test("chat keeps and sends every exchange of the tab: the 6th request carries the 5 shown pairs (WB-01, WB-02)", async ({
+  page,
+}) => {
+  await fixture(page);
+  const { turns } = await mockConsultant(page);
+  const panel = await openChat(page, "ru");
+  const draft = panel.getByRole("textbox", { name: "Ваш вопрос", exact: true });
+  const answers = panel.locator(".ai-answer");
+  const expected = [1, 2, 3, 4, 5].map((i) => ({
+    question: `question ${i}`,
+    answer: `ANSWER question ${i}`,
+  }));
+  for (const pair of expected) {
+    await draft.fill(pair.question);
+    await draft.press("Enter");
+    await expect(answers.last()).toContainText(pair.answer);
+  }
+  // Every exchange of the tab stays on screen, oldest first.
+  const shown = await answers.evaluateAll((sections) =>
+    sections.map((s) => ({
+      question: s.querySelector("strong")?.textContent ?? "",
+      answer: s.querySelector(".ai-plain")?.textContent ?? "",
+    })),
+  );
+  expect.soft(shown).toEqual(expected);
+  await draft.fill("question 6");
+  await draft.press("Enter");
+  await expect.poll(() => turns.length).toBe(6);
+  expect.soft(turns[5]?.history).toEqual(expected);
+  expect.soft(turns[5]?.history).toEqual(shown);
+  expect(turns[5]?.context_token).toBe("synthetic-token");
+  await expect(answers.last()).toContainText("ANSWER question 6");
+});
+
+test("chat data notice: all messages of the tab are sent, no in-tab storage sentence (WB-04 to WB-08)", async ({
+  page,
+}) => {
+  await fixture(page);
+  await mockConsultant(page);
+  // `privacy` base values are the website 74e4eaf texts; only one phrase changes.
+  for (const [lang, privacyBase, before, after, retention] of [
+    [
+      "ru",
+      "Для ответа ваш вопрос и последние сообщения этой вкладки будут переданы OpenAI; для подбора товара текст вопроса также может передаваться OpenRouter. Не указывайте ФИО, контакты, документы или другие личные сведения. OpenAI и OpenRouter могут хранить данные по своим правилам. Ответ не заменяет консультацию врача. Отправляя вопрос, вы соглашаетесь с такой обработкой.",
+      "ваш вопрос и последние сообщения этой вкладки",
+      "ваш вопрос и все сообщения этой вкладки",
+      "Передаются вопрос, предыдущие сообщения этой вкладки и публичные сведения о товарах. Данные аккаунта, корзины и заказа не передаются. Защитные идентификаторы хранятся до 24 часов, события без переписки и идентификаторов — до 7 дней. Проверка личных данных не гарантирует их полного обнаружения.",
+    ],
+    [
+      "uz",
+      "Javob olish uchun savolingiz va shu varaqdagi oxirgi xabarlar OpenAIʼga yuboriladi; mahsulot tanlash uchun savol matni OpenRouterʼga ham yuborilishi mumkin. Ism-familiya, aloqa maʼlumotlari, hujjatlar yoki boshqa shaxsiy maʼlumotlarni kiritmang. OpenAI va OpenRouter maʼlumotlarni oʻz qoidalari asosida saqlashi mumkin. Javob shifokor maslahatini almashtirmaydi. Savolni yuborish orqali bunday qayta ishlashga rozilik bildirasiz.",
+      "shu varaqdagi oxirgi xabarlar",
+      "shu varaqdagi barcha xabarlar",
+      "Savol, shu varaqdagi oldingi xabarlar va ochiq mahsulot maʼlumotlari yuboriladi. Hisob, savat va buyurtma maʼlumotlari yuborilmaydi. Himoya identifikatorlari 24 soatgacha, matn va identifikatorsiz hodisalar 7 kungacha saqlanadi. Shaxsiy maʼlumotlarni tekshirish ularning barchasini aniqlashni kafolatlamaydi.",
+    ],
+  ] as const) {
+    expect(privacyBase.split(before)).toHaveLength(2);
+    const privacy = privacyBase.replace(before, after);
+    const panel = await openChat(page, lang);
+    const notice = panel.locator("details.ai-data");
+    await notice.locator("summary").click();
+    const [first, second] = [
+      notice.locator("p").nth(0),
+      notice.locator("p").nth(1),
+    ];
+    await expect(first).toBeVisible();
+    expect.soft(await first.textContent()).toBe(privacy);
+    expect.soft(await second.textContent()).toBe(retention);
+    await page.keyboard.press("Escape");
+    await expect(panel).not.toBeVisible();
+  }
+});
+
+for (const [lang, busy] of [
+  [
+    "ru",
+    "Консультант сейчас временно не может ответить. Ваш вопрос сохранён — отправьте его ещё раз чуть позже.",
+  ],
+  [
+    "uz",
+    "Maslahatchi hozircha javob bera olmayapti. Savolingiz saqlandi — birozdan keyin qayta yuboring.",
+  ],
+] as const)
+  test(`chat ${lang}: answer_unavailable shows the busy notice and keeps the question, exchanges and token for a retry (WB-09)`, async ({
+    page,
+  }) => {
+    await fixture(page);
+    const { turns } = await mockConsultant(page);
+    const panel = await openChat(page, lang);
+    const draft = panel.getByRole("textbox");
+    const send = panel.locator('.ai-compose button[type="submit"]');
+    await draft.fill("first");
+    await draft.press("Enter");
+    await expect(panel.locator(".ai-answer")).toHaveCount(1);
+    await draft.fill("busy");
+    await draft.press("Enter");
+    await expect.poll(() => turns.length).toBe(2);
+    await expect(panel.getByRole("status")).toHaveText(busy);
+    await expect(draft).toHaveValue("busy");
+    await expect(panel.locator(".ai-answer")).toHaveCount(1);
+    await expect(send).toBeEnabled();
+    // The retry starts from the same state as the failed request.
+    await send.click();
+    await expect.poll(() => turns.length).toBe(3);
+    const [, failed, retry] = turns;
+    expect(failed?.history).toEqual([
+      { question: "first", answer: "ANSWER first" },
+    ]);
+    expect(failed?.context_token).toBe("synthetic-token");
+    expect(retry?.question).toBe("busy");
+    expect(retry?.history).toEqual(failed?.history);
+    expect(retry?.context_token).toBe(failed?.context_token);
+    expect(retry?.tab_id).toBe(failed?.tab_id);
+    await expect(panel.getByRole("status")).toHaveText(busy);
+  });
+
+test("chat context_invalid still resets: empty history, null token, new tab id, the question kept (WB-03)", async ({
+  page,
+}) => {
+  await fixture(page);
+  const { turns } = await mockConsultant(page);
+  const panel = await openChat(page, "ru");
+  const draft = panel.getByRole("textbox");
+  await draft.fill("first");
+  await draft.press("Enter");
+  await expect(panel.locator(".ai-answer")).toHaveCount(1);
+  await draft.fill("invalid");
+  await draft.press("Enter");
+  await expect(panel.getByRole("status")).toHaveText(
+    "Контекст истёк или недействителен. Вопрос сохранён: отправьте его снова явно.",
+  );
+  await expect(draft).toHaveValue("invalid");
+  await expect(panel.locator(".ai-answer")).toHaveCount(0);
+  await draft.fill("after");
+  await draft.press("Enter");
+  await expect.poll(() => turns.length).toBe(3);
+  const [, failed, next] = turns;
+  expect(failed?.context_token).toBe("synthetic-token");
+  expect(next?.history).toEqual([]);
+  expect(next?.context_token).toBeNull();
+  expect(next?.tab_id).not.toBe(failed?.tab_id);
 });

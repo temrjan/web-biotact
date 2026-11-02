@@ -43,7 +43,7 @@ const copy = {
       "Сколько стоит IMMUNOCOMPLEX KIDS?",
     ],
     privacy:
-      "Для ответа ваш вопрос и последние сообщения этой вкладки будут переданы OpenAI; для подбора товара текст вопроса также может передаваться OpenRouter. Не указывайте ФИО, контакты, документы или другие личные сведения. Мы не сохраняем переписку на сервере; OpenAI и OpenRouter могут хранить данные по своим правилам. Ответ не заменяет консультацию врача. Отправляя вопрос, вы соглашаетесь с такой обработкой.",
+      "Для ответа ваш вопрос и последние сообщения этой вкладки будут переданы OpenAI; для подбора товара текст вопроса также может передаваться OpenRouter. Не указывайте ФИО, контакты, документы или другие личные сведения. OpenAI и OpenRouter могут хранить данные по своим правилам. Ответ не заменяет консультацию врача. Отправляя вопрос, вы соглашаетесь с такой обработкой.",
     retention:
       "Передаются вопрос, до четырёх завершённых пар сообщений и публичные сведения о товарах. Данные аккаунта, корзины и заказа не передаются. Контекст хранится только в памяти вкладки до сброса или 30 минут бездействия. Защитные идентификаторы хранятся до 24 часов, события без переписки и идентификаторов — до 7 дней. Проверка личных данных не гарантирует их полного обнаружения.",
     error:
@@ -81,7 +81,7 @@ const copy = {
       "IMMUNOCOMPLEX KIDS qancha turadi?",
     ],
     privacy:
-      "Javob olish uchun savolingiz va shu varaqdagi oxirgi xabarlar OpenAIʼga yuboriladi; mahsulot tanlash uchun savol matni OpenRouterʼga ham yuborilishi mumkin. Ism-familiya, aloqa maʼlumotlari, hujjatlar yoki boshqa shaxsiy maʼlumotlarni kiritmang. Yozishmalarni serverda saqlamaymiz; OpenAI va OpenRouter maʼlumotlarni oʻz qoidalari asosida saqlashi mumkin. Javob shifokor maslahatini almashtirmaydi. Savolni yuborish orqali bunday qayta ishlashga rozilik bildirasiz.",
+      "Javob olish uchun savolingiz va shu varaqdagi oxirgi xabarlar OpenAIʼga yuboriladi; mahsulot tanlash uchun savol matni OpenRouterʼga ham yuborilishi mumkin. Ism-familiya, aloqa maʼlumotlari, hujjatlar yoki boshqa shaxsiy maʼlumotlarni kiritmang. OpenAI va OpenRouter maʼlumotlarni oʻz qoidalari asosida saqlashi mumkin. Javob shifokor maslahatini almashtirmaydi. Savolni yuborish orqali bunday qayta ishlashga rozilik bildirasiz.",
     retention:
       "Savol, toʻrttagacha yakunlangan xabar juftligi va ochiq mahsulot maʼlumotlari yuboriladi. Hisob, savat va buyurtma maʼlumotlari yuborilmaydi. Kontekst faqat varaq xotirasida, tozalashgacha yoki 30 daqiqa harakatsizlikkacha saqlanadi. Himoya identifikatorlari 24 soatgacha, matn va identifikatorsiz hodisalar 7 kungacha saqlanadi. Shaxsiy maʼlumotlarni tekshirish ularning barchasini aniqlashni kafolatlamaydi.",
     error:

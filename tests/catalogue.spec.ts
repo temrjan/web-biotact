@@ -395,6 +395,72 @@ test("product failure and malformed product page retry the current language and 
   ).toHaveValue("Match");
 });
 
+// Spec r6 W1 (WG-01 to WG-03): with the assistant beside the content, three cards per
+// row from 1440px; the rules below 1440px and with the panel closed stay.
+test("three cards per row beside the open assistant from 1440px, current rules below and closed", async ({
+  page,
+}, testInfo) => {
+  await fixture(page);
+  const grid = page.locator(".product-grid");
+  const columns = () =>
+    grid.evaluate(
+      (e) => getComputedStyle(e).gridTemplateColumns.split(" ").length,
+    );
+  const row = page.locator('[data-category="product"] .product-row');
+  for (const [width, open, catalogue, home] of [
+    [1900, true, 3, 3],
+    [1440, true, 3, 3],
+    [1439, true, 2, 2],
+    [1100, true, 1, 2],
+    [1900, false, 3, 4],
+  ] as const) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("/");
+    await expect(row.locator("article")).toHaveCount(40);
+    if (open) await page.locator(".sidebar .ai-nav").click();
+    await expect(page.locator(".assistant-panel")).toBeVisible({
+      visible: open,
+    });
+    await expect.poll(() => visibleCards(row)).toBe(home);
+    if (width === 1900 && open)
+      await page.screenshot({
+        path: testInfo.outputPath("home-1900-open.png"),
+      });
+    await page.goto("/#catalogue");
+    await expect(grid.locator("article")).toHaveCount(20);
+    await expect(page.locator(".assistant-panel")).toBeVisible({
+      visible: open,
+    });
+    expect(await columns()).toBe(catalogue);
+    const widths = await grid.locator("article").evaluateAll(
+      (cards, n) =>
+        cards.slice(0, n).map((c) => {
+          const r = c.getBoundingClientRect();
+          return { top: r.top, width: r.width };
+        }),
+      catalogue,
+    );
+    expect(new Set(widths.map((r) => Math.round(r.top))).size).toBe(1);
+    expect(new Set(widths.map((r) => Math.round(r.width))).size).toBe(1);
+    for (const fontSize of ["", "125%"]) {
+      await page.evaluate(
+        (s) => (document.documentElement.style.fontSize = s),
+        fontSize,
+      );
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      ).toBe(true);
+    }
+    await page.evaluate(() => (document.documentElement.style.fontSize = ""));
+    if (width === 1900 && open)
+      await page.screenshot({
+        path: testInfo.outputPath("catalogue-1900-open.png"),
+      });
+  }
+});
+
 test("responsive cards, gallery and drawer keyboard remain usable at wide, 390 and 320 with enlarged text", async ({
   page,
 }, testInfo) => {

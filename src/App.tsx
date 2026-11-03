@@ -26,7 +26,7 @@ import Basket, {
 } from "./Basket";
 import * as api from "./catalogue";
 import { useGuestBasket } from "./guestBasket";
-import { href, parseLocation, type Location } from "./navigation";
+import { homeTop, href, parseLocation, type Location } from "./navigation";
 import logoUrl from "./assets/logo-biotact.svg";
 import {
   ChevronLeft,
@@ -1502,6 +1502,7 @@ export default function App() {
       <a
         className="brand"
         href={href({ view: "home", lang: loc.lang, page: 1 })}
+        onClick={homeTop}
       >
         <img
           className="brand-logo"
@@ -1515,6 +1516,7 @@ export default function App() {
         <a
           aria-current={loc.view === "home" ? "page" : undefined}
           href={href({ view: "home", lang: loc.lang, page: 1 })}
+          onClick={homeTop}
         >
           {t.home}
         </a>

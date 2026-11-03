@@ -92,3 +92,18 @@ export function href(loc: Location): string {
   p.set("lang", loc.lang);
   return `/#${loc.view}?${p}`;
 }
+/**
+ * The logo and the home menu link show the home view from its top, also when it is
+ * already shown (the hash then does not change). A click with a modifier key or another
+ * mouse button keeps the browser's default; Enter on a focused link clicks with button 0.
+ */
+export function homeTop(e: {
+  button: number;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+}): void {
+  if (e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey)
+    window.scrollTo(0, 0);
+}

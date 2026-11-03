@@ -732,6 +732,72 @@ test("logo image in the side menu, phone menu and Account is the BIOTACT link to
   await logo(page.locator(".account .brand"), "/#home?lang=ru");
 });
 
+// Spec r6 W3 (WL-01 to WL-03), also for the home menu link (Captain 2026-11-03).
+test("logo and home menu link show Home from its top, also on Home, without reload or reset", async ({
+  page,
+}) => {
+  await fixture(page);
+  const top = () => page.evaluate(() => window.scrollY);
+  async function scrolled(hash: string, y: number) {
+    await page.goto(hash);
+    await expect(page.locator("article").first()).toBeVisible();
+    await page.evaluate((v) => window.scrollTo(0, v), y);
+    await expect.poll(top).toBeGreaterThan(1000);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const side = page.locator(".sidebar .brand"),
+    menuHome = page
+      .locator(".sidebar .nav-primary")
+      .getByRole("link", { name: "Главная", exact: true });
+  for (const link of [side, menuHome]) {
+    await scrolled("/#catalogue?page=1&lang=ru", 3000);
+    await link.click();
+    await expect(page).toHaveURL(/#home\?lang=ru$/);
+    await expect(page.locator('[data-category="product"] article')).toHaveCount(
+      40,
+    );
+    await expect.poll(top).toBe(0);
+    // On Home already: no hash change and no reload.
+    await page.evaluate(() => window.scrollTo(0, 2500));
+    await expect.poll(top).toBeGreaterThan(1000);
+    await page.evaluate(() => ((window as { mark?: number }).mark = 1));
+    await link.click();
+    await expect.poll(top).toBe(0);
+    await expect(page).toHaveURL(/#home\?lang=ru$/);
+    expect(await page.evaluate(() => (window as { mark?: number }).mark)).toBe(
+      1,
+    );
+  }
+  // Enter on the focused logo; a click with a modifier keeps the page as it is.
+  await page.evaluate(() => window.scrollTo(0, 2500));
+  await side.focus();
+  await page.keyboard.press("Enter");
+  await expect.poll(top).toBe(0);
+  await page.evaluate(() => window.scrollTo(0, 2500));
+  const popup = page.context().waitForEvent("page");
+  await side.click({ modifiers: ["ControlOrMeta"] });
+  await (await popup).close();
+  expect(await top()).toBeGreaterThan(1000);
+  // WL-03: the open assistant and its draft stay when Home is already shown.
+  await page.locator(".sidebar .ai-nav").click();
+  await page.locator(".assistant-panel textarea").fill("logo draft");
+  await side.click();
+  await expect.poll(top).toBe(0);
+  await expect(page.locator(".assistant-panel")).toBeVisible();
+  await expect(page.locator(".assistant-panel textarea")).toHaveValue(
+    "logo draft",
+  );
+  // Phone: the drawer logo shows Home at the top and closes the drawer.
+  await page.locator(".assistant-panel .close-control").click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await scrolled("/#catalogue?page=1&lang=ru", 3000);
+  await page.locator(".menu-toggle").click();
+  await page.locator(".drawer .brand").click();
+  await expect(page).toHaveURL(/#home\?lang=ru$/);
+  await expect(page.locator(".drawer")).not.toBeVisible();
+  await expect.poll(top).toBe(0);
+});
+
 test("accepted footer colors, size variants, availability and remembered basket share quantities without purchase requests", async ({
   page,
 }) => {
@@ -1732,8 +1798,9 @@ test("Home sections: sale, Mini App category rows, lazy video, FAQ accordion, co
   const footer = page.locator(".page-footer");
   // Captain P1: two address lines, then the phone line, then the e-mail line.
   await expect(footer.locator('[aria-labelledby="footer-uz"] p')).toHaveText([
-    "100009, г. Ташкент, Юнусабадский район,",
-    "МФЙ «Шарк хакикати», улица Янгикурган, 1-й тупик, дом 90",
+    // Spec r6 WF-01: the Mini App legal address (contacts.ts postalAddress).
+    "100109, Республика Узбекистан, г. Ташкент,",
+    "Алмазарский район, ул. Фаробий, 448J",
     "Тел.: (+998 93) 555 17 47",
     "E-Mail: contact_uz@biotact.de",
   ]);
@@ -1742,7 +1809,8 @@ test("Home sections: sale, Mini App category rows, lazy video, FAQ accordion, co
     await expect(link).toHaveCSS("color", "rgb(12, 61, 43)");
   }
   await keyboardFocus(footer.locator("a").first());
-  await expect(footer).not.toContainText("Фаробий");
+  await expect(footer).toContainText("Фаробий");
+  await expect(footer).not.toContainText("Янгикурган");
   await expect(
     footer.getByRole("link", { name: "(+998 93) 555 17 47" }),
   ).toHaveAttribute("href", "tel:+998935551747");
@@ -1806,12 +1874,11 @@ test("Home sections: sale, Mini App category rows, lazy video, FAQ accordion, co
   );
   await expect(
     footer.locator('[aria-labelledby="footer-uz"] p').first(),
-  ).toHaveText("100009, Toshkent shahri, Yunusobod tumani,");
+  ).toHaveText("100109, Toshkent shahri, Olmazor tumani,");
   await expect(
     footer.locator('[aria-labelledby="footer-uz"] p').nth(1),
-  ).toHaveText(
-    "Sharq haqiqati MFY, Yangiqo'rg'on ko'chasi, 1-tor ko'cha, 90-uy",
-  );
+  ).toHaveText("Farobiy ko'chasi, 448J");
+  await expect(footer).not.toContainText("Yangiqo'rg'on");
   await page.locator('[data-category="product"] .section-head a').click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
     "Nutriyentlar API",

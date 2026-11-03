@@ -41,6 +41,12 @@
 .assistant-open .product-row {
   grid-auto-columns: calc((100% - 1.5rem) / 2);
 }
+/* From 1440px three whole cards stay in view beside the open assistant. */
+@media (min-width: 1440px) {
+  .assistant-open .product-row {
+    grid-auto-columns: calc((100% - 2 * 1.5rem) / 3);
+  }
+}
 /* Row header: title on the left, the row control on the right. */
 .slider-head {
   align-items: center;

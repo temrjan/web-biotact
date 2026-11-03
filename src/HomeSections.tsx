@@ -81,8 +81,8 @@ const copy = {
     notice: "Форма скоро заработает. Позвоните нам:",
     phoneLabel: "Тел.:",
     address: [
-      "100009, г. Ташкент, Юнусабадский район,",
-      "МФЙ «Шарк хакикати», улица Янгикурган, 1-й тупик, дом 90",
+      "100109, Республика Узбекистан, г. Ташкент,",
+      "Алмазарский район, ул. Фаробий, 448J",
     ],
     contacts: "Контакты",
     credit: "Разработка сайта —",
@@ -100,8 +100,8 @@ const copy = {
     notice: "Shakl tez orada ishga tushadi. Bizga qo'ng'iroq qiling:",
     phoneLabel: "Tel.:",
     address: [
-      "100009, Toshkent shahri, Yunusobod tumani,",
-      "Sharq haqiqati MFY, Yangiqo'rg'on ko'chasi, 1-tor ko'cha, 90-uy",
+      "100109, Toshkent shahri, Olmazor tumani,",
+      "Farobiy ko'chasi, 448J",
     ],
     contacts: "Kontaktlar",
     credit: "Sayt ishlab chiqilgan:",
@@ -264,7 +264,7 @@ export function Consultation({ lang }: { lang: Language }) {
   );
 }
 
-/** Mini App footer contacts with the current Uzbekistan address, then copyright and credit. */
+/** Mini App footer contacts with the Uzbekistan legal address, then copyright and credit. */
 export function CompanyFooter({ lang }: { lang: Language }) {
   const t = copy[lang];
   return (

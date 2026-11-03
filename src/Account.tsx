@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import * as api from "./api";
 import type { Language } from "./catalogue";
 import logoUrl from "./assets/logo-biotact.svg";
+import { homeTop } from "./navigation";
 
 /** Notice key rendered in the current page language; never shown as text. */
 const TELEGRAM_UNAVAILABLE = "telegram_unavailable";
@@ -354,7 +355,7 @@ export default function Account({ lang }: { lang: Language }) {
     attempt && ["declined", "expired", "cancelled"].includes(attempt.state);
   return (
     <div className="account">
-      <a className="brand" href="/#home?lang=ru">
+      <a className="brand" href="/#home?lang=ru" onClick={homeTop}>
         <img
           className="brand-logo"
           src={logoUrl}

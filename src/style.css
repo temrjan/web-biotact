@@ -1049,6 +1049,12 @@ h3 {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+/* From 1440px the catalogue keeps three cards per row beside the open assistant. */
+@media (min-width: 1440px) {
+  .assistant-open .product-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
 .skip-link {
   position: fixed;
   top: -10rem;

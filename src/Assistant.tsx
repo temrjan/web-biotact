@@ -167,6 +167,10 @@ export default function Assistant({
   const arrived = useRef<Box | null>(null);
   const draftLength = api.questionLength(draft);
   const showCount = draftLength >= api.QUESTION_COUNTER_FROM;
+  const sendOff =
+    pending ||
+    !draft.trim() ||
+    api.questionLength(draft.trim()) > api.QUESTION_LIMIT;
 
   /** Returns a question that got no answer to an empty textarea (CH-07, CH-08). */
   function restore(question: string) {
@@ -632,13 +636,14 @@ export default function Assistant({
             {t.count}: {draftLength} / {api.QUESTION_LIMIT}
           </p>
         )}
+        {/* CH-01: a disabled Send stays focusable (aria-disabled), so the focus stays
+            on it after a click; while disabled a click sends nothing (CH-09). */}
         <button
           type="submit"
-          disabled={
-            pending ||
-            !draft.trim() ||
-            api.questionLength(draft.trim()) > api.QUESTION_LIMIT
-          }
+          aria-disabled={sendOff || undefined}
+          onClick={(e) => {
+            if (sendOff) e.preventDefault();
+          }}
         >
           {t.send}
         </button>

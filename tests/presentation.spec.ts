@@ -3970,6 +3970,14 @@ test("chat send shows the question at once with an animated progress line; a sho
   await expect(pending).toHaveCount(0);
   expect((await chatGeometry(panel)).scrollTop).toBe(before.scrollTop);
   await expect(draft).toHaveValue("next");
+  // A send by a click keeps the focus on the Send button (CH-01).
+  await draft.fill("slow click");
+  const send = panel.getByRole("button", { name: "Отправить", exact: true });
+  await send.click();
+  await expect(pending).toHaveText("slow click");
+  expect(await send.evaluate((e) => document.activeElement === e)).toBe(true);
+  consultant.release();
+  await expect(panel.locator(".ai-answer")).toHaveCount(3);
 });
 
 test("chat long answer is read from its question; a customer who scrolled away stays (spec r7 B2, B3, CH-01, CH-04 to CH-06)", async ({

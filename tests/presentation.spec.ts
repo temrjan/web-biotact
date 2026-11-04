@@ -3440,8 +3440,9 @@ const apiErrors: Record<string, { status: number; code: string }> = {
   invalid: { status: 400, code: "context_invalid" },
 };
 /**
- * Mocked consultant API for the chat panel: "slow" waits for release, "fail" answers
- * 503 `unavailable`; the questions of `apiErrors` answer their error.
+ * Mocked consultant API for the chat panel: a question starting with "slow" waits for
+ * release, "fail" answers 503 `unavailable`; the questions of `apiErrors` (also after a
+ * "slow " prefix) answer their error.
  */
 async function mockConsultant(page: Page, chatProducts = [products[4]]) {
   const turns: Record<string, unknown>[] = [];
@@ -3452,7 +3453,8 @@ async function mockConsultant(page: Page, chatProducts = [products[4]]) {
   await page.route("**/api/v1/consultant/turns", async (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;
     turns.push(body);
-    if (body.question === "slow")
+    const question = String(body.question);
+    if (question.startsWith("slow"))
       await new Promise<void>((resolve) => waiting.push(resolve));
     if (body.question === "fail") {
       await route
@@ -3460,7 +3462,7 @@ async function mockConsultant(page: Page, chatProducts = [products[4]]) {
         .catch(() => undefined);
       return;
     }
-    const error = apiErrors[String(body.question)];
+    const error = apiErrors[question.replace(/^slow /, "")];
     if (error) {
       await route
         .fulfill({
@@ -3577,6 +3579,9 @@ test("chat sends one message at a time; answer, error and cancel enable Send aga
   await expect(send).toBeDisabled();
   await panel.getByRole("button", { name: "Отменить", exact: true }).click();
   await expect(send).toBeEnabled();
+  // spec r7 CH-08: the cancelled question is back in the textarea, no pending entry.
+  await expect(draft).toHaveValue("slow");
+  await expect(panel.locator(".ai-pending")).toHaveCount(0);
   consultant.release();
   await page.waitForTimeout(300);
   await expect(panel.locator(".ai-answer")).toHaveCount(2);
@@ -3867,4 +3872,199 @@ test("chat context_invalid still resets: empty history, null token, new tab id, 
   expect(next?.history).toEqual([]);
   expect(next?.context_token).toBeNull();
   expect(next?.tab_id).not.toBe(failed?.tab_id);
+});
+
+// --- spec r7 W4: send, progress line and scroll (CH-01 to CH-11) ---------------------
+
+/** P's client box, its scroll state, and the boxes the CH rules read. */
+async function chatGeometry(panel: Locator) {
+  return panel.evaluate((p) => {
+    const top = p.getBoundingClientRect().top + p.clientTop;
+    const box = (e: Element | null | undefined) => {
+      const r = e?.getBoundingClientRect();
+      return r ? { top: r.top - top, bottom: r.bottom - top } : null;
+    };
+    const answers = p.querySelectorAll(".ai-answer");
+    return {
+      scrollTop: p.scrollTop,
+      clientHeight: p.clientHeight,
+      line: box(p.querySelector('[role="status"]')),
+      question: box(answers[answers.length - 1]?.querySelector("p")),
+    };
+  });
+}
+const longText = (lang: "ru" | "uz") =>
+  (lang === "ru"
+    ? "длинный вопрос о приёме и составе товара "
+    : "mahsulotni qabul qilish va tarkibi haqida uzun savol "
+  ).repeat(18);
+
+test("chat send shows the question at once with an animated progress line; a short answer does not scroll (spec r7 B1, CH-01, CH-02, CH-04, CH-10)", async ({
+  page,
+}) => {
+  await fixture(page);
+  const consultant = await mockConsultant(page);
+  const panel = await openChat(page, "ru", 1900);
+  const draft = panel.getByRole("textbox", { name: "Ваш вопрос", exact: true });
+  await draft.fill("first");
+  await draft.press("Enter");
+  await expect(panel.locator(".assistant-cards .product-card")).toHaveCount(1);
+  await draft.fill("slow");
+  await draft.press("Enter");
+  await expect.poll(() => consultant.turns.length).toBe(2);
+  const pending = panel.locator(".ai-pending");
+  await expect(pending).toHaveText("slow");
+  await expect(pending.locator("strong")).toHaveText("slow");
+  await expect(draft).toHaveValue("");
+  await expect(draft).toBeFocused();
+  // After the cards, directly above the live region; not a completed exchange.
+  expect(
+    await panel.evaluate((p) => {
+      const cards = p.querySelector(".assistant-cards");
+      const item = p.querySelector(".ai-pending");
+      return (
+        cards?.nextElementSibling === item &&
+        item?.nextElementSibling === p.querySelector('[role="status"]')
+      );
+    }),
+  ).toBe(true);
+  await expect(panel.locator(".ai-answer")).toHaveCount(1);
+  const status = panel.getByRole("status");
+  expect(await status.evaluate((e) => e.textContent)).toBe("Готовлю ответ…");
+  const dots = status.locator('.ai-progress-dots[aria-hidden="true"] > span');
+  await expect(dots).toHaveCount(3);
+  const band = status.locator('.ai-progress-band[aria-hidden="true"]');
+  for (const moving of [...(await dots.all()), band])
+    expect(
+      await moving.evaluate((e) => getComputedStyle(e).animationName),
+    ).not.toBe("none");
+  // The ellipsis is read, not shown next to the dots.
+  const ellipsis = await status
+    .locator(".ai-progress-hidden")
+    .evaluate((e) => [e.textContent, e.getBoundingClientRect().width]);
+  expect(ellipsis[0]).toBe("…");
+  expect(Number(ellipsis[1])).toBeLessThanOrEqual(1);
+  // The polite region does not change while the request is in flight.
+  const mutations = await status.evaluate(
+    (e) =>
+      new Promise<number>((resolve) => {
+        let count = 0;
+        const observer = new MutationObserver((list) => (count += list.length));
+        observer.observe(e, {
+          subtree: true,
+          childList: true,
+          characterData: true,
+          attributes: true,
+        });
+        setTimeout(() => {
+          observer.disconnect();
+          resolve(count);
+        }, 1000);
+      }),
+  );
+  expect(mutations).toBe(0);
+  await draft.fill("next");
+  const before = await chatGeometry(panel);
+  consultant.release();
+  await expect(panel.locator(".ai-answer")).toHaveCount(2);
+  await expect(pending).toHaveCount(0);
+  expect((await chatGeometry(panel)).scrollTop).toBe(before.scrollTop);
+  await expect(draft).toHaveValue("next");
+  // A send by a click keeps the focus on the Send button (CH-01).
+  await draft.fill("slow click");
+  const send = panel.getByRole("button", { name: "Отправить", exact: true });
+  await send.click();
+  await expect(pending).toHaveText("slow click");
+  expect(await send.evaluate((e) => document.activeElement === e)).toBe(true);
+  consultant.release();
+  await expect(panel.locator(".ai-answer")).toHaveCount(3);
+});
+
+test("chat long answer is read from its question; a customer who scrolled away stays (spec r7 B2, B3, CH-01, CH-04 to CH-06)", async ({
+  page,
+}) => {
+  await fixture(page);
+  const consultant = await mockConsultant(page);
+  for (const [lang, width, progress] of [
+    ["ru", 1900, "Готовлю ответ…"],
+    ["uz", 390, "Javob tayyorlanmoqda…"],
+  ] as const) {
+    const panel = await openChat(page, lang, width);
+    const draft = panel.getByRole("textbox");
+    for (const n of [1, 2]) {
+      await draft.fill(`${n} ${longText(lang)}`);
+      await draft.press("Enter");
+      await expect(panel.locator(".ai-answer")).toHaveCount(n);
+    }
+    await draft.fill(`slow ${longText(lang)}`);
+    await draft.press("Enter");
+    await expect(panel.getByRole("status")).toHaveText(progress);
+    // CH-01: the whole progress line is in view.
+    const held = await chatGeometry(panel);
+    expect(held.line?.top).toBeGreaterThanOrEqual(0);
+    expect(held.line?.bottom).toBeLessThanOrEqual(held.clientHeight);
+    consultant.release();
+    await expect(panel.locator(".ai-answer")).toHaveCount(3);
+    const after = await chatGeometry(panel);
+    expect(after.question?.top).toBeGreaterThanOrEqual(0);
+    expect(after.question?.top).toBeLessThanOrEqual(16);
+    if (width === 1900) {
+      // B3: scrolled to the top during the hold, the panel stays there.
+      await draft.fill(`slow ${longText(lang)}`);
+      await draft.press("Enter");
+      await expect(panel.getByRole("status")).toHaveText(progress);
+      await panel.evaluate((p) => (p.scrollTop = 0));
+      consultant.release();
+      await expect(panel.locator(".ai-answer")).toHaveCount(4);
+      expect((await chatGeometry(panel)).scrollTop).toBe(0);
+    }
+    await page.keyboard.press("Escape");
+    await expect(panel).not.toBeVisible();
+  }
+});
+
+test("chat progress line stands still under reduced motion (spec r7 B4, CH-03)", async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const consultant = await mockConsultant(page);
+  const panel = await openChat(page, "ru", 1900);
+  await panel.getByRole("textbox").fill("slow");
+  await panel.getByRole("textbox").press("Enter");
+  const status = panel.getByRole("status");
+  await expect(status).toHaveText("Готовлю ответ…");
+  const dots = status.locator(".ai-progress-dots > span");
+  await expect(dots).toHaveCount(3);
+  for (const still of [
+    ...(await dots.all()),
+    status.locator(".ai-progress-band"),
+  ])
+    expect(await still.evaluate((e) => getComputedStyle(e).animationName)).toBe(
+      "none",
+    );
+  await expect(status.locator(".ai-progress-label")).toBeVisible();
+  for (const dot of await dots.all()) await expect(dot).toBeVisible();
+  consultant.release();
+  await expect(panel.locator(".ai-answer")).toHaveCount(1);
+});
+
+test("chat failure with a new question typed keeps that question and drops the pending entry (spec r7 B5, CH-07)", async ({
+  page,
+}) => {
+  await fixture(page);
+  const consultant = await mockConsultant(page);
+  const panel = await openChat(page, "ru");
+  const draft = panel.getByRole("textbox");
+  await draft.fill("slow busy");
+  await draft.press("Enter");
+  await expect(panel.locator(".ai-pending")).toHaveText("slow busy");
+  await draft.fill("next");
+  consultant.release();
+  await expect(panel.getByRole("status")).toHaveText(
+    "Консультант сейчас временно не может ответить. Ваш вопрос сохранён — отправьте его ещё раз чуть позже.",
+  );
+  await expect(draft).toHaveValue("next");
+  await expect(panel.locator(".ai-pending")).toHaveCount(0);
+  await expect(panel.locator(".ai-answer")).toHaveCount(0);
 });

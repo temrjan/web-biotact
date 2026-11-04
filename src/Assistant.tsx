@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEventHandler,
@@ -7,6 +8,7 @@ import {
   type RefObject,
 } from "react";
 import type { Language, Product } from "./catalogue";
+import { afterAnswer, reveal, type Box } from "./chatScroll";
 import * as api from "./consultant";
 import { href } from "./navigation";
 
@@ -141,6 +143,8 @@ export default function Assistant({
   const [entries, setEntries] = useState<Entry[]>([]);
   const [cards, setCards] = useState<Product[]>([]);
   const [pending, setPending] = useState(false);
+  // The customer message of the request in flight, shown as the pending entry (CH-01).
+  const [asked, setAsked] = useState<string | null>(null);
   const [busyCards, setBusyCards] = useState<number[]>([]);
   const [notice, setNotice] = useState(t.cleared);
   const tab = useRef(crypto.randomUUID());
@@ -155,9 +159,24 @@ export default function Assistant({
   const alive = useRef(true);
   const visible = useRef(active);
   visible.current = active;
+  const progress = useRef<HTMLParagraphElement>(null);
+  const latest = useRef<HTMLElement>(null);
+  const cardList = useRef<HTMLDivElement>(null);
+  // The progress line's box when the answer arrived; the layout effect places the new
+  // entry by it (CH-04, CH-05).
+  const arrived = useRef<Box | null>(null);
   const draftLength = api.questionLength(draft);
   const showCount = draftLength >= api.QUESTION_COUNTER_FROM;
+  const sendOff =
+    pending ||
+    !draft.trim() ||
+    api.questionLength(draft.trim()) > api.QUESTION_LIMIT;
 
+  /** Returns a question that got no answer to an empty textarea (CH-07, CH-08). */
+  function restore(question: string) {
+    setAsked(null);
+    setDraft((current) => (current.trim() ? current : question));
+  }
   function cancel() {
     const current = run.current;
     run.current = null;
@@ -168,6 +187,7 @@ export default function Assistant({
         tab_id: current.turn.tab_id,
         request_id: current.turn.request_id,
       });
+      restore(current.turn.question);
     }
     setPending(false);
   }
@@ -208,6 +228,7 @@ export default function Assistant({
         tab_id: current.turn.tab_id,
         request_id: current.turn.request_id,
       });
+      restore(current.turn.question);
     }
   }, [active]);
   useEffect(() => {
@@ -216,6 +237,44 @@ export default function Assistant({
     }, 1000);
     return () => window.clearInterval(interval);
   });
+  function panelBox(): Parameters<typeof reveal>[0] | null {
+    const panel = dialogRef.current;
+    if (!panel) return null;
+    return {
+      top: panel.getBoundingClientRect().top + panel.clientTop,
+      clientHeight: panel.clientHeight,
+      scrollTop: panel.scrollTop,
+      maxScroll: panel.scrollHeight - panel.clientHeight,
+    };
+  }
+  // CH-01: the whole progress line in view (nearest position) once the question is sent.
+  useLayoutEffect(() => {
+    const box = panelBox();
+    const line = progress.current?.getBoundingClientRect();
+    if (asked === null || !box || !line || !dialogRef.current) return;
+    const top = reveal(box, line);
+    if (top !== null) dialogRef.current.scrollTop = top;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new pending entry moves the panel
+  }, [asked]);
+  // CH-04, CH-05: after the new entry is in the DOM and before the paint, a short answer
+  // stays where it is and a long one is read from its question down. Scrolls are instant.
+  useLayoutEffect(() => {
+    const line = arrived.current;
+    arrived.current = null;
+    const box = panelBox();
+    const entry = latest.current?.getBoundingClientRect();
+    if (!line || !box || !entry || !dialogRef.current) return;
+    const list = cardList.current?.getBoundingClientRect();
+    const bottom =
+      list && list.height > 0
+        ? Math.max(entry.bottom, list.bottom)
+        : entry.bottom;
+    // The entry's padding box: its question sits one top padding below it.
+    const start = entry.top + (latest.current?.clientTop ?? 0);
+    const top = afterAnswer(box, line, { top: start, bottom });
+    if (top !== null) dialogRef.current.scrollTop = top;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when an answer is added
+  }, [entries]);
 
   /** Sends the draft, or an example question exactly as if it were typed. */
   async function submit(text: string = draft) {
@@ -235,6 +294,9 @@ export default function Assistant({
     cancel();
     touched.current = Date.now();
     setNotice("");
+    // CH-01: the question moves into the conversation and the textarea clears.
+    setAsked(question);
+    setDraft("");
     const turn: api.Turn = {
       request_id: crypto.randomUUID(),
       tab_id: tab.current,
@@ -263,11 +325,13 @@ export default function Assistant({
       )
         return;
       token.current = response.context_token;
+      arrived.current = progress.current?.getBoundingClientRect() ?? null;
+      setAsked(null);
       setEntries((old) => [...old, { question, response }]);
       // An empty-selection response must remove stale cards. Same-subject source-only
       // preservation is encoded by the server; display only the latest returned cards.
       setCards(response.products);
-      setDraft((current) => (current.trim() === question ? "" : current));
+      // CH-10: text typed during the request stays in the textarea.
       if (response.open_product_id !== null) {
         onClose();
         window.location.hash =
@@ -285,11 +349,13 @@ export default function Assistant({
         run.current?.turn.request_id !== turn.request_id
       )
         return;
-      // The token, the entries and the typed question stay as they were, so the
-      // visitor can send again from the same state; an invalid context resets.
+      // The token and the entries stay as they were and the question returns to an
+      // empty textarea, so the visitor can send again from the same state; an invalid
+      // context resets (CH-07).
       const notice = api.errorNotice(
         error instanceof api.ConsultantError ? error.code : "unavailable",
       );
+      restore(question);
       if (notice === "expired") reset(true);
       setNotice(t[notice]);
     } finally {
@@ -469,8 +535,12 @@ export default function Assistant({
           </div>
         )}
         <button onClick={() => reset()}>{t.reset}</button>
-        {entries.map((entry) => (
-          <section className="ai-answer" key={entry.response.request_id}>
+        {entries.map((entry, index) => (
+          <section
+            className="ai-answer"
+            key={entry.response.request_id}
+            ref={index === entries.length - 1 ? latest : undefined}
+          >
             <p>
               <strong>{entry.question}</strong>
             </p>
@@ -510,15 +580,22 @@ export default function Assistant({
             )}
           </section>
         ))}
-        <div className="assistant-cards">
+        <div className="assistant-cards" ref={cardList}>
           {cards.map((p) => (
             <div key={p.id}>
               {renderCard(p, actions, busyCards.includes(p.id))}
             </div>
           ))}
         </div>
-        <p role="status" aria-live="polite">
-          {notice || (pending && active ? t.progress : "")}
+        {asked !== null && (
+          <section className="ai-pending">
+            <p>
+              <strong>{asked}</strong>
+            </p>
+          </section>
+        )}
+        <p role="status" aria-live="polite" ref={progress}>
+          {notice || (pending && active ? <Progress label={t.progress} /> : "")}
         </p>
       </div>
       <form
@@ -559,13 +636,14 @@ export default function Assistant({
             {t.count}: {draftLength} / {api.QUESTION_LIMIT}
           </p>
         )}
+        {/* CH-01: a disabled Send stays focusable (aria-disabled), so the focus stays
+            on it after a click; while disabled a click sends nothing (CH-09). */}
         <button
           type="submit"
-          disabled={
-            pending ||
-            !draft.trim() ||
-            api.questionLength(draft.trim()) > api.QUESTION_LIMIT
-          }
+          aria-disabled={sendOff || undefined}
+          onClick={(e) => {
+            if (sendOff) e.preventDefault();
+          }}
         >
           {t.send}
         </button>
@@ -579,5 +657,28 @@ export default function Assistant({
         </p>
       </form>
     </dialog>
+  );
+}
+
+/**
+ * The progress line (CH-02): the label with three dots bouncing in turn and a soft
+ * band moving across it. Its text is exactly `label`; the trailing ellipsis is read
+ * but not shown, and the moving parts are hidden from assistive technology.
+ */
+function Progress({ label }: { label: string }) {
+  const text = label.replace(/…$/, "");
+  return (
+    <span className="ai-progress">
+      <span className="ai-progress-label">
+        {text}
+        {text !== label && <span className="ai-progress-hidden">…</span>}
+        <span className="ai-progress-band" aria-hidden="true" />
+      </span>
+      <span className="ai-progress-dots" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </span>
+    </span>
   );
 }

@@ -222,6 +222,128 @@ export async function detail(
   if (p.id !== id) throw new ReadError();
   return p;
 }
+/**
+ * Every product matching the filter, in server order, read in pages of 100.
+ * A changed total, a duplicate or any failed page rejects the whole list.
+ */
+async function allProducts(
+  filter: Record<string, string>,
+  lang: Language,
+  signal: AbortSignal,
+): Promise<Product[]> {
+  const result: Product[] = [],
+    ids = new Set<number>();
+  let total: number | undefined;
+  for (let n = 1; ; n++) {
+    const q = new URLSearchParams({
+      ...filter,
+      page: String(n),
+      size: "100",
+    });
+    const p = pageData(
+      await get(`/products?${q}`, lang, signal),
+      (v) => {
+        const d = object(v);
+        if (d.is_active !== true) throw new ReadError();
+        return product(d);
+      },
+      n,
+      100,
+    );
+    if (total !== undefined && p.total !== total) throw new ReadError();
+    total = p.total;
+    for (const item of p.items) {
+      if (ids.has(item.id)) throw new ReadError();
+      ids.add(item.id);
+      result.push(item);
+    }
+    if (n === p.pages) return result;
+  }
+}
+/** All on-sale products in server order, as the Mini App home requests them. */
+export function saleProducts(
+  lang: Language,
+  signal: AbortSignal,
+): Promise<Product[]> {
+  return allProducts({ on_sale: "true" }, lang, signal);
+}
+/** All products of one category in server order, for its home row. */
+export function categoryProducts(
+  lang: Language,
+  signal: AbortSignal,
+  categoryId: number,
+): Promise<Product[]> {
+  return allProducts({ category_id: String(categoryId) }, lang, signal);
+}
+export interface Banner {
+  id: number;
+  title: string;
+  image_url: string;
+  link_url: string | null;
+}
+/** Admin banner in the requested language; a banner without an image has nothing to show. */
+export function banner(v: unknown, lang: Language): Banner | null {
+  const d = object(v);
+  const title = optional(d.title),
+    titleUz = optional(d.title_uz);
+  if (
+    title === null ||
+    typeof d.sort_order !== "number" ||
+    !Number.isSafeInteger(d.sort_order) ||
+    !flag(d.is_active)
+  )
+    throw new ReadError();
+  const image = safeMedia(optional(d.image_url));
+  return image
+    ? {
+        id: integer(d.id, 1),
+        title: lang === "uz" && titleUz?.trim() ? titleUz : title,
+        image_url: image,
+        link_url: optional(d.link_url),
+      }
+    : null;
+}
+/** Active banners in server order, read in pages of 100 like the Mini App. */
+export async function banners(
+  lang: Language,
+  signal: AbortSignal,
+): Promise<Banner[]> {
+  const result: Banner[] = [];
+  let total: number | undefined;
+  for (let skip = 0; ; skip += 100) {
+    const d = object(
+      await get(`/banners?is_active=true&limit=100&skip=${skip}`, lang, signal),
+    );
+    const count = integer(d.total);
+    if (
+      (total !== undefined && count !== total) ||
+      !Array.isArray(d.items) ||
+      d.items.length !== Math.min(100, Math.max(0, count - skip))
+    )
+      throw new ReadError();
+    total = count;
+    for (const item of d.items) {
+      const parsed = banner(item, lang);
+      if (parsed) result.push(parsed);
+    }
+    if (skip + 100 >= count) return result;
+  }
+}
+/** Mini App fallback when the setting is missing or unusable. */
+export const DEFAULT_BANNER_INTERVAL = 3000;
+export async function bannerInterval(signal: AbortSignal): Promise<number> {
+  try {
+    const value = Number(
+      object(await get("/settings/banner_interval", "ru", signal)).value,
+    );
+    return Number.isFinite(value) && value > 0
+      ? value
+      : DEFAULT_BANNER_INTERVAL;
+  } catch (error) {
+    if (signal.aborted) throw error;
+    return DEFAULT_BANNER_INTERVAL;
+  }
+}
 /** Permit existing same-origin media and absolute HTTPS, never active URL schemes. */
 export function safeMedia(value: string | null, video = false): string | null {
   if (!value) return null;
@@ -238,6 +360,25 @@ export function safeMedia(value: string | null, video = false): string | null {
   } catch {
     return null;
   }
+}
+/**
+ * YouTube video ID of an admin video link (youtu.be/ID, youtube.com/watch?v=ID
+ * or /embed/ID, as the Mini App accepts); other links have no embeddable video.
+ */
+export function youtubeId(value: string | null): string | null {
+  const safe = safeMedia(value, true);
+  if (!safe) return null;
+  const u = new URL(safe);
+  const host = u.hostname.toLowerCase().replace(/^(www|m)\./, "");
+  const id =
+    host === "youtu.be"
+      ? u.pathname.split("/")[1]
+      : host === "youtube.com" || host === "youtube-nocookie.com"
+        ? u.pathname === "/watch"
+          ? u.searchParams.get("v")
+          : /^\/embed\/([^/]+)$/.exec(u.pathname)?.[1]
+        : null;
+  return id && /^[\w-]{11}$/.test(id) ? id : null;
 }
 export function price(p: Product): {
   current: string;

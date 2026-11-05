@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
-import { fixture, products } from "./catalogue.fixture";
+import { fixture, products, visibleCards } from "./catalogue.fixture";
 
-test("complete discovery, bounded Home, server paging/search and canonical native links", async ({
+test("complete discovery, complete Home rows, server paging/search and canonical native links", async ({
   page,
 }) => {
   const f = await fixture(page);
@@ -10,15 +10,28 @@ test("complete discovery, bounded Home, server paging/search and canonical nativ
     if (r.url().includes("/buyer/auth")) auth++;
   });
   await page.goto("/");
-  await expect(page.locator(".home-grid article")).toHaveCount(4);
-  await expect(page.locator(".group-tile.unavailable")).toContainText(
-    "Товары для жизни",
+  const popular = page.locator('[data-category="product"]');
+  // The first category row has every product of its category and the admin name.
+  await expect(popular.locator("article")).toHaveCount(40);
+  await expect(popular.locator("h2")).toHaveText("Нутриенты");
+  await expect(popular.locator(".section-head a")).toHaveAttribute(
+    "href",
+    "/#catalogue?category=301&page=1&lang=ru",
   );
-  await expect(page.locator(".group-tile.unavailable a")).toHaveCount(0);
+  await expect(page.locator('[data-category="sale"] article')).toHaveCount(1);
+  // Empty (302/303) and absent (active-life) categories are hidden like the Mini App.
+  await expect
+    .poll(() =>
+      page
+        .locator(".home-section[data-category]")
+        .evaluateAll((nodes) =>
+          nodes.map((n) => n.getAttribute("data-category")),
+        ),
+    )
+    .toEqual(["sale", "product"]);
   await expect(page.locator(".hero")).toHaveCount(1);
-  await expect(page.locator("#hero-note")).toContainText("примеры");
   await expect(page.getByRole("main")).toHaveCount(1);
-  const first = page.locator('[data-product-id="4001"]');
+  const first = popular.locator('[data-product-id="4001"]');
   await expect(first.locator("h3 a")).toHaveAttribute(
     "href",
     "/#product?id=4001&lang=ru",
@@ -33,10 +46,16 @@ test("complete discovery, bounded Home, server paging/search and canonical nativ
     page.getByText("<b>Plain API description</b>", { exact: true }),
   ).toBeVisible();
   await expect(page.locator(".product-text b")).toHaveCount(0);
-  await expect(page.getByText("Доступные размеры: L, XL")).toBeVisible();
+  // Sizes are buttons; the old "Доступные размеры" line is gone (SZ1).
+  await expect(page.getByText(/Доступные размеры/)).toHaveCount(0);
   await expect(
-    page.getByRole("link", { name: "Смотреть видео" }),
-  ).toHaveAttribute("href", "https://video.example.test/exact/watch?v=17");
+    page
+      .getByRole("group", { name: "Размер: Synthetic Match 01" })
+      .getByRole("button"),
+  ).toHaveText(["L", "XL"]);
+  // A non-YouTube video link has no embed and no longer opens externally.
+  await expect(page.getByText("Смотреть видео")).toHaveCount(0);
+  await expect(page.locator(".product-video")).toHaveCount(0);
   await page
     .getByRole("button", { name: "Изображение 2", exact: true })
     .click();
@@ -279,7 +298,7 @@ test("public round trip and Account reentry reconcile cookies without resetting 
     localStorage.setItem("unrelated", "exact bytes");
     sessionStorage.setItem("biotact.tg1.request", '{"key":"kept"}');
   });
-  await page.locator(".group-tile").first().click();
+  await page.locator('[data-category="product"] .section-head a').click();
   await expect(page.locator("article")).toHaveCount(20);
   await page.locator("article h3 a").first().click();
   await expect(page.locator(".product-main")).toBeVisible();
@@ -376,6 +395,72 @@ test("product failure and malformed product page retry the current language and 
   ).toHaveValue("Match");
 });
 
+// Spec r6 W1 (WG-01 to WG-03): with the assistant beside the content, three cards per
+// row from 1440px; the rules below 1440px and with the panel closed stay.
+test("three cards per row beside the open assistant from 1440px, current rules below and closed", async ({
+  page,
+}, testInfo) => {
+  await fixture(page);
+  const grid = page.locator(".product-grid");
+  const columns = () =>
+    grid.evaluate(
+      (e) => getComputedStyle(e).gridTemplateColumns.split(" ").length,
+    );
+  const row = page.locator('[data-category="product"] .product-row');
+  for (const [width, open, catalogue, home] of [
+    [1900, true, 3, 3],
+    [1440, true, 3, 3],
+    [1439, true, 2, 2],
+    [1100, true, 1, 2],
+    [1900, false, 3, 4],
+  ] as const) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("/");
+    await expect(row.locator("article")).toHaveCount(40);
+    if (open) await page.locator(".sidebar .ai-nav").click();
+    await expect(page.locator(".assistant-panel")).toBeVisible({
+      visible: open,
+    });
+    await expect.poll(() => visibleCards(row)).toBe(home);
+    if (width === 1900 && open)
+      await page.screenshot({
+        path: testInfo.outputPath("home-1900-open.png"),
+      });
+    await page.goto("/#catalogue");
+    await expect(grid.locator("article")).toHaveCount(20);
+    await expect(page.locator(".assistant-panel")).toBeVisible({
+      visible: open,
+    });
+    expect(await columns()).toBe(catalogue);
+    const widths = await grid.locator("article").evaluateAll(
+      (cards, n) =>
+        cards.slice(0, n).map((c) => {
+          const r = c.getBoundingClientRect();
+          return { top: r.top, width: r.width };
+        }),
+      catalogue,
+    );
+    expect(new Set(widths.map((r) => Math.round(r.top))).size).toBe(1);
+    expect(new Set(widths.map((r) => Math.round(r.width))).size).toBe(1);
+    for (const fontSize of ["", "125%"]) {
+      await page.evaluate(
+        (s) => (document.documentElement.style.fontSize = s),
+        fontSize,
+      );
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      ).toBe(true);
+    }
+    await page.evaluate(() => (document.documentElement.style.fontSize = ""));
+    if (width === 1900 && open)
+      await page.screenshot({
+        path: testInfo.outputPath("catalogue-1900-open.png"),
+      });
+  }
+});
+
 test("responsive cards, gallery and drawer keyboard remain usable at wide, 390 and 320 with enlarged text", async ({
   page,
 }, testInfo) => {
@@ -383,14 +468,9 @@ test("responsive cards, gallery and drawer keyboard remain usable at wide, 390 a
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 960 });
     await page.goto("/");
-    await expect(page.locator(".home-grid article")).toHaveCount(4);
-    expect(
-      await page
-        .locator(".home-grid")
-        .evaluate(
-          (e) => getComputedStyle(e).gridTemplateColumns.split(" ").length,
-        ),
-    ).toBe(width === 1440 ? 4 : 2);
+    const row = page.locator('[data-category="product"] .product-row');
+    await expect(row.locator("article")).toHaveCount(40);
+    expect(await visibleCards(row)).toBe(width === 1440 ? 4 : 2);
     const media = page.locator(".card-media").first();
     const size = await media.boundingBox();
     expect(Math.abs((size?.width || 0) - (size?.height || 0))).toBeLessThan(1);
@@ -468,4 +548,61 @@ test("responsive cards, gallery and drawer keyboard remain usable at wide, 390 a
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await page.evaluate(() => (document.documentElement.style.fontSize = ""));
   }
+});
+
+test("every home category row reads all server pages of its category; a failed later page shows the row error", async ({
+  page,
+}) => {
+  const sample = products[4];
+  if (!products[0] || !sample) throw new Error("Missing fixture products");
+  // 106 products in category 301: two server pages of 100.
+  const source = [
+    products[0],
+    ...Array.from({ length: 105 }, (_, i) => ({
+      ...sample,
+      id: 5001 + i,
+      name: `Paged ${i + 1}`,
+      category_id: 301,
+      image_url: "/synthetic-image.svg",
+    })),
+  ];
+  await fixture(page, source);
+  let failSecondPage = true;
+  const pages: string[] = [];
+  await page.route("**/api/v1/products?*", (route) => {
+    const u = new URL(route.request().url());
+    if (u.searchParams.get("category_id") === "301")
+      pages.push(`${u.searchParams.get("page")}/${u.searchParams.get("size")}`);
+    return failSecondPage &&
+      u.searchParams.get("category_id") === "301" &&
+      u.searchParams.get("page") === "2"
+      ? route.fulfill({ status: 503, json: {} })
+      : route.fallback();
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  const section = page.locator('[data-category="product"]');
+  // No partial row: the first page alone is not shown.
+  await expect(section.getByRole("alert")).toBeVisible();
+  await expect(section.locator("article")).toHaveCount(0);
+  failSecondPage = false;
+  await section.getByRole("button", { name: "Повторить" }).click();
+  const row = section.locator(".product-row");
+  await expect(row.locator("article")).toHaveCount(106);
+  await expect(row.locator("article").last()).toHaveAttribute(
+    "data-product-id",
+    "5105",
+  );
+  expect(pages).toEqual(["1/100", "2/100", "1/100", "2/100"]);
+  // Category rows load card images lazily; the first visible (sale) row does not.
+  const images = row.locator("img");
+  expect(await images.count()).toBe(106);
+  expect(
+    await images.evaluateAll((nodes) =>
+      nodes.every((n) => n.getAttribute("loading") === "lazy"),
+    ),
+  ).toBe(true);
+  const saleImage = page.locator('[data-category="sale"] img');
+  await expect(saleImage).toHaveCount(1);
+  expect(await saleImage.getAttribute("loading")).toBeNull();
 });

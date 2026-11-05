@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { commercial, history, parseAnswer, type Turn } from "./consultant";
+import {
+  commercial,
+  errorNotice,
+  history,
+  parseAnswer,
+  QUESTION_LIMIT,
+  questionLength,
+  type Turn,
+} from "./consultant";
 import { product } from "./catalogue";
 
 const turn: Turn = {
@@ -40,13 +48,47 @@ describe("consultant response boundary", () => {
     ])
       expect(() => parseAnswer({ ...raw, ...patch }, turn)).toThrow();
   });
-  it("keeps complete history pairs within both caps", () => {
+  it("caps a question at 1,000 code points, counting an emoji or Cyrillic letter once", () => {
+    expect(QUESTION_LIMIT).toBe(1000);
+    expect(questionLength("Как принимать?")).toBe(14);
+    // One astral symbol is two UTF-16 units but one code point.
+    expect(questionLength("😀".repeat(3))).toBe(3);
+  });
+  it("accepts a long answer: 20,000 characters is shown, not an error", () => {
+    const answer = "Ответ ".repeat(3334).slice(0, 20000);
+    expect(parseAnswer({ ...raw, answer }, turn).answer).toBe(answer);
+    expect(() => parseAnswer({ ...raw, answer: " " }, turn)).toThrow();
+  });
+  it("sends every completed pair of the tab in order, with no count or length cut", () => {
     const pairs = Array.from({ length: 6 }, (_, i) => ({
       question: String(i),
       answer: "x".repeat(4000),
     }));
-    expect(history(pairs).map((p) => p.question)).toEqual(["4", "5"]);
-    expect(history(pairs.slice(0, 2))).toHaveLength(2);
+    expect(history(pairs)).toEqual(pairs);
+    expect(history(pairs).map((p) => p.question)).toEqual([
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+    ]);
+    expect(history([])).toEqual([]);
+  });
+  it("maps answer_unavailable to the busy notice and keeps today's notices for other codes", () => {
+    expect(errorNotice("answer_unavailable")).toBe("busy");
+    expect(errorNotice("context_invalid")).toBe("expired");
+    expect(errorNotice("context_expired")).toBe("expired");
+    expect(errorNotice("sensitive_input")).toBe("sensitive");
+    for (const code of [
+      "unavailable",
+      "invalid_answer",
+      "invalid_input",
+      "knowledge_unavailable",
+      "provider_unavailable",
+      "configuration_unavailable",
+    ])
+      expect(errorNotice(code)).toBe("error");
   });
   it("detects commercial and size changes without treating descriptions as purchase changes", () => {
     const p = product({

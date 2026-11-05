@@ -39,6 +39,13 @@ export interface Answer {
   context_expires_at: string;
   commercial_checked_at: string | null;
 }
+/** Longest question the consultant accepts, in Unicode code points (API cap). */
+export const QUESTION_LIMIT = 1000;
+/** The draft counter appears from this many code points. */
+export const QUESTION_COUNTER_FROM = 800;
+export function questionLength(value: string): number {
+  return Array.from(value).length;
+}
 export class ConsultantError extends Error {
   constructor(public code: string) {
     super(code);
@@ -161,7 +168,8 @@ export function parseAnswer(raw: unknown, turn: Turn): Answer {
     context_revision: turn.context_revision,
     language: turn.language,
     status: d.status as Answer["status"],
-    answer: text(d.answer),
+    // The API sets no answer length cap (Shop #172); a long answer is shown.
+    answer: text(d.answer, Number.POSITIVE_INFINITY),
     sources: ss,
     cautions: d.cautions as string[],
     products: ps,
@@ -230,13 +238,18 @@ export function commercial(p: Product): string {
     p.available_sizes,
   ]);
 }
-export function history(pairs: Pair[]): Pair[] {
-  const result = pairs.slice(-4);
-  while (
-    result.reduce((n, p) => n + p.question.length + p.answer.length, 0) > 12000
-  )
-    result.shift();
-  return result;
+/** Every completed pair of the tab conversation, oldest first, with no count or length cut. */
+export function history(pairs: readonly Pair[]): Pair[] {
+  return [...pairs];
+}
+/** Which panel notice an error code shows; every other code keeps the general one. */
+export type ErrorNotice = "expired" | "sensitive" | "busy" | "error";
+export function errorNotice(code: string): ErrorNotice {
+  if (code === "context_invalid" || code === "context_expired")
+    return "expired";
+  if (code === "sensitive_input") return "sensitive";
+  if (code === "answer_unavailable") return "busy";
+  return "error";
 }
 
 export function sensitive(value: string): boolean {

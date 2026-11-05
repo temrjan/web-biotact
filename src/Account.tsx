@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import * as api from "./api";
+import type { Language } from "./catalogue";
+import logoUrl from "./assets/logo-biotact.svg";
+import { homeTop } from "./navigation";
+
+/** Notice key rendered in the current page language; never shown as text. */
+const TELEGRAM_UNAVAILABLE = "telegram_unavailable";
+const telegramUnavailable = {
+  ru: "Вход через Telegram сейчас недоступен.",
+  uz: "Telegram orqali kirish hozircha mavjud emas.",
+};
 
 type View =
   | "loading"
@@ -10,7 +20,7 @@ type View =
   | "authenticated"
   | "unavailable"
   | "recovery";
-export default function Account() {
+export default function Account({ lang }: { lang: Language }) {
   const [view, setView] = useState<View>("loading");
   const [current, setCurrent] = useState<api.Session | null>(null);
   const [club, setClub] = useState<api.Club | null>(null);
@@ -154,7 +164,7 @@ export default function Account() {
       if (!mounted.current || epoch !== generation.current) return;
       if (!c.telegram_enabled) {
         setView("unavailable");
-        setNotice("Вход через Telegram сейчас недоступен.");
+        setNotice(TELEGRAM_UNAVAILABLE);
         return;
       }
       if (paused.current) return;
@@ -187,7 +197,7 @@ export default function Account() {
           polling.current = false;
           setTelegramEnabled(false);
           setView("unavailable");
-          setNotice("Вход через Telegram сейчас недоступен.");
+          setNotice(TELEGRAM_UNAVAILABLE);
         } else {
           handleError(e);
           if (e instanceof api.ApiError && e.status === 409) {
@@ -252,7 +262,7 @@ export default function Account() {
       if (!mounted.current || epoch !== generation.current) return;
       if (!c.telegram_enabled) {
         setView("unavailable");
-        setNotice("Вход через Telegram сейчас недоступен.");
+        setNotice(TELEGRAM_UNAVAILABLE);
         return;
       }
       const old = api.saved();
@@ -301,9 +311,7 @@ export default function Account() {
       setAttempt(null);
       const fresh = await getContext();
       if (!mounted.current || epoch !== generation.current) return;
-      setNotice(
-        fresh.telegram_enabled ? "" : "Вход через Telegram сейчас недоступен.",
-      );
+      setNotice(fresh.telegram_enabled ? "" : TELEGRAM_UNAVAILABLE);
       setView(fresh.telegram_enabled ? "ready" : "unavailable");
     } catch (e) {
       if (!mounted.current || epoch !== generation.current) return;
@@ -347,8 +355,14 @@ export default function Account() {
     attempt && ["declined", "expired", "cancelled"].includes(attempt.state);
   return (
     <div className="account">
-      <a className="brand" href="/#home?lang=ru">
-        BIOTACT
+      <a className="brand" href="/#home?lang=ru" onClick={homeTop}>
+        <img
+          className="brand-logo"
+          src={logoUrl}
+          alt="BIOTACT"
+          width={351}
+          height={125}
+        />
       </a>
       <section>
         <p className="eyebrow">Ваш Biotact Club</p>
@@ -507,7 +521,13 @@ export default function Account() {
             </button>
           </div>
         )}
-        {notice && <p role="alert">{notice}</p>}
+        {notice && (
+          <p role="alert">
+            {notice === TELEGRAM_UNAVAILABLE
+              ? telegramUnavailable[lang]
+              : notice}
+          </p>
+        )}
         {view === "unavailable" && (
           <button
             onClick={() => {

@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEventHandler,
@@ -7,6 +8,7 @@ import {
   type RefObject,
 } from "react";
 import type { Language, Product } from "./catalogue";
+import { afterAnswer, reveal, type Box } from "./chatScroll";
 import * as api from "./consultant";
 import { href } from "./navigation";
 
@@ -34,12 +36,21 @@ const copy = {
     progress: "Готовлю ответ…",
     sources: "Источники",
     data: "Обработка данных",
+    hint: "Не пишите в вопросе личные данные. Подробнее — в «Обработка данных».",
+    abilities:
+      "Помогу выбрать товар, расскажу о составе, способе приёма и цене. Например:",
+    examples: [
+      "Как принимать IMMUNOCOMPLEX?",
+      "Как принимать NEUROCOMPLEX KIDS?",
+      "Сколько стоит IMMUNOCOMPLEX KIDS?",
+    ],
     privacy:
-      "Для ответа ваш вопрос и последние сообщения этой вкладки будут переданы OpenAI. Не указывайте ФИО, контакты, документы или другие личные сведения. Мы не сохраняем переписку на сервере; OpenAI может хранить данные по своим правилам. Ответ не заменяет консультацию врача. Отправляя вопрос, вы соглашаетесь с такой обработкой.",
+      "Для ответа ваш вопрос и все сообщения этой вкладки будут переданы OpenAI; для подбора товара текст вопроса также может передаваться OpenRouter. Не указывайте ФИО, контакты, документы или другие личные сведения. OpenAI и OpenRouter могут хранить данные по своим правилам. Ответ не заменяет консультацию врача. Отправляя вопрос, вы соглашаетесь с такой обработкой.",
     retention:
-      "Передаются вопрос, до четырёх завершённых пар сообщений и публичные сведения о товарах. Данные аккаунта, корзины и заказа не передаются. Контекст хранится только в памяти вкладки до сброса или 30 минут бездействия. Защитные идентификаторы хранятся до 24 часов, события без переписки и идентификаторов — до 7 дней. Проверка личных данных не гарантирует их полного обнаружения.",
+      "Передаются вопрос, предыдущие сообщения этой вкладки и публичные сведения о товарах. Данные аккаунта, корзины и заказа не передаются. Защитные идентификаторы хранятся до 24 часов, события без переписки и идентификаторов — до 7 дней. Проверка личных данных не гарантирует их полного обнаружения.",
     error:
       "Ответ недоступен. Измените вопрос или попробуйте отправить его снова. Каталог продолжает работать.",
+    busy: "Консультант сейчас временно не может ответить. Ваш вопрос сохранён — отправьте его ещё раз чуть позже.",
     expired:
       "Контекст истёк или недействителен. Вопрос сохранён: отправьте его снова явно.",
     sensitive: "Уберите контакты, документы и секретные сведения из вопроса.",
@@ -47,7 +58,8 @@ const copy = {
       "Цена или доступность изменились. Проверьте карточку и нажмите «В корзину» снова.",
     unavailable: "Сведения о товаре недоступны. Добавление остановлено.",
     shop: "Цена и наличие: Shop, проверено",
-    shortcut: "Ctrl/Cmd+Enter — отправить. Enter — новая строка.",
+    shortcut: "Enter — отправить. Shift+Enter — новая строка.",
+    count: "Символов",
   },
   uz: {
     title: "AI-maslahatchi",
@@ -63,12 +75,21 @@ const copy = {
     progress: "Javob tayyorlanmoqda…",
     sources: "Manbalar",
     data: "Maʼlumotlarni qayta ishlash",
+    hint: "Savolda shaxsiy maʼlumotlarni yozmang. Batafsil — «Maʼlumotlarni qayta ishlash» boʻlimida.",
+    abilities:
+      "Mahsulot tanlashga yordam beraman, tarkibi, qabul qilish usuli va narxi haqida aytib beraman. Masalan:",
+    examples: [
+      "IMMUNOCOMPLEX KIDS qanday qabul qilinadi?",
+      "IMMUNOCOMPLEX qanday qabul qilinadi?",
+      "IMMUNOCOMPLEX KIDS qancha turadi?",
+    ],
     privacy:
-      "Javob olish uchun savolingiz va shu varaqdagi oxirgi xabarlar OpenAIʼga yuboriladi. Ism-familiya, aloqa maʼlumotlari, hujjatlar yoki boshqa shaxsiy maʼlumotlarni kiritmang. Yozishmalarni serverda saqlamaymiz; OpenAI maʼlumotlarni oʻz qoidalari asosida saqlashi mumkin. Javob shifokor maslahatini almashtirmaydi. Savolni yuborish orqali bunday qayta ishlashga rozilik bildirasiz.",
+      "Javob olish uchun savolingiz va shu varaqdagi barcha xabarlar OpenAIʼga yuboriladi; mahsulot tanlash uchun savol matni OpenRouterʼga ham yuborilishi mumkin. Ism-familiya, aloqa maʼlumotlari, hujjatlar yoki boshqa shaxsiy maʼlumotlarni kiritmang. OpenAI va OpenRouter maʼlumotlarni oʻz qoidalari asosida saqlashi mumkin. Javob shifokor maslahatini almashtirmaydi. Savolni yuborish orqali bunday qayta ishlashga rozilik bildirasiz.",
     retention:
-      "Savol, toʻrttagacha yakunlangan xabar juftligi va ochiq mahsulot maʼlumotlari yuboriladi. Hisob, savat va buyurtma maʼlumotlari yuborilmaydi. Kontekst faqat varaq xotirasida, tozalashgacha yoki 30 daqiqa harakatsizlikkacha saqlanadi. Himoya identifikatorlari 24 soatgacha, matn va identifikatorsiz hodisalar 7 kungacha saqlanadi. Shaxsiy maʼlumotlarni tekshirish ularning barchasini aniqlashni kafolatlamaydi.",
+      "Savol, shu varaqdagi oldingi xabarlar va ochiq mahsulot maʼlumotlari yuboriladi. Hisob, savat va buyurtma maʼlumotlari yuborilmaydi. Himoya identifikatorlari 24 soatgacha, matn va identifikatorsiz hodisalar 7 kungacha saqlanadi. Shaxsiy maʼlumotlarni tekshirish ularning barchasini aniqlashni kafolatlamaydi.",
     error:
       "Javob mavjud emas. Savolni oʻzgartiring yoki qayta yuboring. Katalog ishlashda davom etadi.",
+    busy: "Maslahatchi hozircha javob bera olmayapti. Savolingiz saqlandi — birozdan keyin qayta yuboring.",
     expired:
       "Kontekst eskirgan yoki notoʻgʻri. Savol saqlandi: uni qayta yuboring.",
     sensitive: "Savoldan aloqa, hujjat va maxfiy maʼlumotlarni olib tashlang.",
@@ -76,7 +97,8 @@ const copy = {
       "Narx yoki mavjudlik oʻzgardi. Kartani tekshirib, «Savatga» tugmasini yana bosing.",
     unavailable: "Mahsulot maʼlumotlari mavjud emas. Qoʻshish toʻxtatildi.",
     shop: "Narx va mavjudlik: Shop, tekshirildi",
-    shortcut: "Ctrl/Cmd+Enter — yuborish. Enter — yangi qator.",
+    shortcut: "Enter — yuborish. Shift+Enter — yangi qator.",
+    count: "Belgilar",
   },
 };
 interface Entry {
@@ -121,6 +143,8 @@ export default function Assistant({
   const [entries, setEntries] = useState<Entry[]>([]);
   const [cards, setCards] = useState<Product[]>([]);
   const [pending, setPending] = useState(false);
+  // The customer message of the request in flight, shown as the pending entry (CH-01).
+  const [asked, setAsked] = useState<string | null>(null);
   const [busyCards, setBusyCards] = useState<number[]>([]);
   const [notice, setNotice] = useState(t.cleared);
   const tab = useRef(crypto.randomUUID());
@@ -135,7 +159,24 @@ export default function Assistant({
   const alive = useRef(true);
   const visible = useRef(active);
   visible.current = active;
+  const progress = useRef<HTMLParagraphElement>(null);
+  const latest = useRef<HTMLElement>(null);
+  const cardList = useRef<HTMLDivElement>(null);
+  // The progress line's box when the answer arrived; the layout effect places the new
+  // entry by it (CH-04, CH-05).
+  const arrived = useRef<Box | null>(null);
+  const draftLength = api.questionLength(draft);
+  const showCount = draftLength >= api.QUESTION_COUNTER_FROM;
+  const sendOff =
+    pending ||
+    !draft.trim() ||
+    api.questionLength(draft.trim()) > api.QUESTION_LIMIT;
 
+  /** Returns a question that got no answer to an empty textarea (CH-07, CH-08). */
+  function restore(question: string) {
+    setAsked(null);
+    setDraft((current) => (current.trim() ? current : question));
+  }
   function cancel() {
     const current = run.current;
     run.current = null;
@@ -146,6 +187,7 @@ export default function Assistant({
         tab_id: current.turn.tab_id,
         request_id: current.turn.request_id,
       });
+      restore(current.turn.question);
     }
     setPending(false);
   }
@@ -186,6 +228,7 @@ export default function Assistant({
         tab_id: current.turn.tab_id,
         request_id: current.turn.request_id,
       });
+      restore(current.turn.question);
     }
   }, [active]);
   useEffect(() => {
@@ -194,10 +237,52 @@ export default function Assistant({
     }, 1000);
     return () => window.clearInterval(interval);
   });
+  function panelBox(): Parameters<typeof reveal>[0] | null {
+    const panel = dialogRef.current;
+    if (!panel) return null;
+    return {
+      top: panel.getBoundingClientRect().top + panel.clientTop,
+      clientHeight: panel.clientHeight,
+      scrollTop: panel.scrollTop,
+      maxScroll: panel.scrollHeight - panel.clientHeight,
+    };
+  }
+  // CH-01: the whole progress line in view (nearest position) once the question is sent.
+  useLayoutEffect(() => {
+    const box = panelBox();
+    const line = progress.current?.getBoundingClientRect();
+    if (asked === null || !box || !line || !dialogRef.current) return;
+    const top = reveal(box, line);
+    if (top !== null) dialogRef.current.scrollTop = top;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new pending entry moves the panel
+  }, [asked]);
+  // CH-04, CH-05: after the new entry is in the DOM and before the paint, a short answer
+  // stays where it is and a long one is read from its question down. Scrolls are instant.
+  useLayoutEffect(() => {
+    const line = arrived.current;
+    arrived.current = null;
+    const box = panelBox();
+    const entry = latest.current?.getBoundingClientRect();
+    if (!line || !box || !entry || !dialogRef.current) return;
+    const list = cardList.current?.getBoundingClientRect();
+    const bottom =
+      list && list.height > 0
+        ? Math.max(entry.bottom, list.bottom)
+        : entry.bottom;
+    // The entry's padding box: its question sits one top padding below it.
+    const start = entry.top + (latest.current?.clientTop ?? 0);
+    const top = afterAnswer(box, line, { top: start, bottom });
+    if (top !== null) dialogRef.current.scrollTop = top;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when an answer is added
+  }, [entries]);
 
-  async function submit() {
-    const question = draft.trim();
-    if (!question || Array.from(question).length > 2000) return;
+  /** Sends the draft, or an example question exactly as if it were typed. */
+  async function submit(text: string = draft) {
+    // One message at a time: a new question waits until the pending answer,
+    // its error or its cancellation (OM1).
+    if (run.current) return;
+    const question = text.trim();
+    if (!question || api.questionLength(question) > api.QUESTION_LIMIT) return;
     if (api.sensitive(question)) {
       setNotice(t.sensitive);
       return;
@@ -209,6 +294,9 @@ export default function Assistant({
     cancel();
     touched.current = Date.now();
     setNotice("");
+    // CH-01: the question moves into the conversation and the textarea clears.
+    setAsked(question);
+    setDraft("");
     const turn: api.Turn = {
       request_id: crypto.randomUUID(),
       tab_id: tab.current,
@@ -237,11 +325,13 @@ export default function Assistant({
       )
         return;
       token.current = response.context_token;
-      setEntries((old) => [...old, { question, response }].slice(-4));
+      arrived.current = progress.current?.getBoundingClientRect() ?? null;
+      setAsked(null);
+      setEntries((old) => [...old, { question, response }]);
       // An empty-selection response must remove stale cards. Same-subject source-only
       // preservation is encoded by the server; display only the latest returned cards.
       setCards(response.products);
-      setDraft((current) => (current.trim() === question ? "" : current));
+      // CH-10: text typed during the request stays in the textarea.
       if (response.open_product_id !== null) {
         onClose();
         window.location.hash =
@@ -259,16 +349,22 @@ export default function Assistant({
         run.current?.turn.request_id !== turn.request_id
       )
         return;
-      const code =
-        error instanceof api.ConsultantError ? error.code : "unavailable";
-      if (code === "context_invalid" || code === "context_expired") {
-        reset(true);
-        setNotice(t.expired);
-      } else setNotice(code === "sensitive_input" ? t.sensitive : t.error);
+      // The token and the entries stay as they were and the question returns to an
+      // empty textarea, so the visitor can send again from the same state; an invalid
+      // context resets (CH-07).
+      const notice = api.errorNotice(
+        error instanceof api.ConsultantError ? error.code : "unavailable",
+      );
+      restore(question);
+      if (notice === "expired") reset(true);
+      setNotice(t[notice]);
     } finally {
-      if (alive.current && run.current?.turn.request_id === turn.request_id) {
-        run.current = null;
-        setPending(false);
+      if (alive.current) {
+        if (run.current?.turn.request_id === turn.request_id)
+          run.current = null;
+        // Whatever stopped this run (answer, error, cancel, reset or hiding the
+        // panel), Send is enabled again once no run is in flight (OM1).
+        if (run.current === null) setPending(false);
       }
     }
   }
@@ -395,21 +491,56 @@ export default function Assistant({
         <strong>{context}</strong>
       </div>
       <div className="ai-body">
-        <p>{t.privacy}</p>
-        <details>
+        <p className="ai-hint">{t.hint}</p>
+        <details className="ai-data">
           <summary>{t.data}</summary>
+          <p>{t.privacy}</p>
           <p>{t.retention}</p>
-          <a
-            href="https://developers.openai.com/api/docs/guides/your-data"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            OpenAI
-          </a>
+          <p className="ai-links">
+            <a
+              href="https://developers.openai.com/api/docs/guides/your-data"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              OpenAI
+            </a>
+            <a
+              href="https://openrouter.ai/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              OpenRouter
+            </a>
+          </p>
         </details>
+        {entries.length === 0 && (
+          <div className="ai-examples">
+            <p>{t.abilities}</p>
+            <div className="suggestions">
+              {t.examples.map((example) => (
+                <button
+                  type="button"
+                  key={example}
+                  disabled={pending}
+                  onClick={() => {
+                    touched.current = Date.now();
+                    setDraft(example);
+                    void submit(example);
+                  }}
+                >
+                  {example}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <button onClick={() => reset()}>{t.reset}</button>
-        {entries.map((entry) => (
-          <section className="ai-answer" key={entry.response.request_id}>
+        {entries.map((entry, index) => (
+          <section
+            className="ai-answer"
+            key={entry.response.request_id}
+            ref={index === entries.length - 1 ? latest : undefined}
+          >
             <p>
               <strong>{entry.question}</strong>
             </p>
@@ -449,15 +580,22 @@ export default function Assistant({
             )}
           </section>
         ))}
-        <div className="assistant-cards">
+        <div className="assistant-cards" ref={cardList}>
           {cards.map((p) => (
             <div key={p.id}>
               {renderCard(p, actions, busyCards.includes(p.id))}
             </div>
           ))}
         </div>
-        <p role="status" aria-live="polite">
-          {notice || (pending && active ? t.progress : "")}
+        {asked !== null && (
+          <section className="ai-pending">
+            <p>
+              <strong>{asked}</strong>
+            </p>
+          </section>
+        )}
+        <p role="status" aria-live="polite" ref={progress}>
+          {notice || (pending && active ? <Progress label={t.progress} /> : "")}
         </p>
       </div>
       <form
@@ -471,21 +609,41 @@ export default function Assistant({
         <textarea
           id="assistant-draft"
           value={draft}
-          maxLength={4000}
+          maxLength={api.QUESTION_LIMIT}
+          {...(showCount ? { "aria-describedby": "assistant-count" } : {})}
           onChange={(e) => {
             touched.current = Date.now();
             setDraft(e.target.value);
           }}
+          enterKeyHint="send"
           onKeyDown={(e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-              e.preventDefault();
-              void submit();
-            }
+            // Enter sends; Shift+Enter keeps the native new line. An Enter that
+            // confirms IME composition (keyCode 229 in Safari) never sends.
+            if (
+              e.key !== "Enter" ||
+              e.shiftKey ||
+              e.altKey ||
+              e.nativeEvent.isComposing ||
+              e.keyCode === 229
+            )
+              return;
+            e.preventDefault();
+            void submit();
           }}
         />
+        {showCount && (
+          <p className="ai-count" id="assistant-count">
+            {t.count}: {draftLength} / {api.QUESTION_LIMIT}
+          </p>
+        )}
+        {/* CH-01: a disabled Send stays focusable (aria-disabled), so the focus stays
+            on it after a click; while disabled a click sends nothing (CH-09). */}
         <button
           type="submit"
-          disabled={!draft.trim() || Array.from(draft.trim()).length > 2000}
+          aria-disabled={sendOff || undefined}
+          onClick={(e) => {
+            if (sendOff) e.preventDefault();
+          }}
         >
           {t.send}
         </button>
@@ -499,5 +657,28 @@ export default function Assistant({
         </p>
       </form>
     </dialog>
+  );
+}
+
+/**
+ * The progress line (CH-02): the label with three dots bouncing in turn and a soft
+ * band moving across it. Its text is exactly `label`; the trailing ellipsis is read
+ * but not shown, and the moving parts are hidden from assistive technology.
+ */
+function Progress({ label }: { label: string }) {
+  const text = label.replace(/…$/, "");
+  return (
+    <span className="ai-progress">
+      <span className="ai-progress-label">
+        {text}
+        {text !== label && <span className="ai-progress-hidden">…</span>}
+        <span className="ai-progress-band" aria-hidden="true" />
+      </span>
+      <span className="ai-progress-dots" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </span>
+    </span>
   );
 }

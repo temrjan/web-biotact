@@ -40,6 +40,48 @@ export function parseLocation(hash: string): Location {
   }
   return { ...base, view: "invalid" };
 }
+/**
+ * Website destination of an admin banner link. Mini App paths map to the same
+ * catalogue view; absolute HTTPS links open separately, other schemes are ignored.
+ */
+export function bannerTarget(
+  link: string | null,
+  lang: Language,
+  categories: readonly { id: number; slug: string }[],
+): { href: string; external: boolean } {
+  const value = link?.trim() || "/catalog";
+  const catalogue = {
+    href: href({ view: "catalogue", lang, page: 1 }),
+    external: false,
+  };
+  if (/^https?:/i.test(value)) {
+    try {
+      const u = new URL(value);
+      return u.protocol === "https:" && !u.username && !u.password
+        ? { href: u.href, external: true }
+        : catalogue;
+    } catch {
+      return catalogue;
+    }
+  }
+  const path = value.split(/[?#]/)[0]?.replace(/\/+$/, "") || "/";
+  if (path === "/")
+    return { href: href({ view: "home", lang, page: 1 }), external: false };
+  const slug = /^\/catalog\/([^/]+)$/.exec(path)?.[1];
+  const category = slug ? categories.find((c) => c.slug === slug) : undefined;
+  if (category)
+    return {
+      href: href({ view: "catalogue", lang, page: 1, category: category.id }),
+      external: false,
+    };
+  const product = id(/^\/product\/([^/]+)$/.exec(path)?.[1] ?? null);
+  if (product)
+    return {
+      href: href({ view: "product", lang, page: 1, id: product }),
+      external: false,
+    };
+  return catalogue;
+}
 export function href(loc: Location): string {
   const p = new URLSearchParams();
   if (loc.view === "catalogue") {
@@ -61,4 +103,19 @@ export function returnAddress(search: string): string | null {
         page: 1,
       })
     : null;
+}
+/**
+ * The logo and the home menu link show the home view from its top, also when it is
+ * already shown (the hash then does not change). A click with a modifier key or another
+ * mouse button keeps the browser's default; Enter on a focused link clicks with button 0.
+ */
+export function homeTop(e: {
+  button: number;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+}): void {
+  if (e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey)
+    window.scrollTo(0, 0);
 }

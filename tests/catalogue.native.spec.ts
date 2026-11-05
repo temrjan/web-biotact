@@ -27,15 +27,19 @@ test("V6 synthetic native catalogue IDs, decimal sale, RU/UZ fallback and SQL ag
       });
   });
   await page.goto("/");
-  await expect(page.locator(".home-grid article")).toHaveCount(4);
+  const popular = page.locator('[data-category="product"]');
+  await expect(popular.locator("article")).toHaveCount(1);
   expect(
-    await page
-      .locator(".home-grid article[data-product-id]")
+    await popular
+      .locator("article[data-product-id]")
       .evaluateAll((nodes) =>
         nodes.map((n) => n.getAttribute("data-product-id")),
       ),
-  ).toEqual(["4101", "4102", "4103", "4104"]);
-  await page.locator('.group-tile[href*="category=301&"]').click();
+  ).toEqual(["4101"]);
+  await expect(
+    page.locator('[data-category="sale"] [data-product-id="4101"]'),
+  ).toBeVisible();
+  await popular.locator(".section-head a").click();
   await expect(page.locator("article[data-product-id]")).toHaveCount(1);
   await expect(
     page.locator('[data-product-id="4101"] .price strong'),

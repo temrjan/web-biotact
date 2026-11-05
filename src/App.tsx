@@ -2,13 +2,22 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type KeyboardEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 import Account from "./Account";
 import Assistant, { type BeforeAdd } from "./Assistant";
 import SizePicker from "./SizePicker";
-import Hero, { ExampleMaterial } from "./Hero";
+import Hero from "./Hero";
+import {
+  CompanyFooter,
+  Consultation,
+  Faq,
+  Video,
+  VideoPlayer,
+} from "./HomeSections";
 import Basket, {
   basketCopy,
   CartIcon,
@@ -19,7 +28,22 @@ import * as api from "./catalogue";
 import { useGuestBasket } from "./guestBasket";
 import type { Order } from "./guest";
 import OrderView from "./Order";
-import { href, parseLocation, type Location } from "./navigation";
+import { homeTop, href, parseLocation, type Location } from "./navigation";
+import logoUrl from "./assets/logo-biotact.svg";
+import {
+  ChevronLeft,
+  ChevronRight,
+  CloseIcon,
+  CookingPotIcon,
+  GiftIcon,
+  GlobeIcon,
+  HeartPulseIcon,
+  LayoutGridIcon,
+  PillIcon,
+  SearchIcon,
+  SparklesIcon,
+  UserIcon,
+} from "./icons";
 
 const copy = {
   ru: {
@@ -29,20 +53,20 @@ const copy = {
     all: "Все товары",
     search: "Поиск товаров",
     find: "Найти",
+    closeSearch: "Закрыть поиск",
+    language: "Язык",
     loading: "Загружаем…",
     error: "Не удалось загрузить данные. Проверьте соединение и повторите.",
     retry: "Повторить",
     empty: "Товары не найдены",
     unavailable: "Категория недоступна",
-    preview: "Первые товары каталога",
-    previewNote:
-      "Небольшой обзор — до четырёх товаров. Полный ассортимент доступен в каталоге.",
+    viewAll: "Все",
+    sales: "Акции",
     details: "Подробнее о товаре",
     noImage: "Нет изображения",
     inStock: "В наличии",
     outOfStock: "Нет в наличии",
     noPurchase: "Недоступен для покупки",
-    sizes: "Доступные размеры",
     description: "Описание",
     advantages: "Преимущества",
     info: "Дополнительная информация",
@@ -64,8 +88,9 @@ const copy = {
       "Товары для жизни",
     ],
     missing: "Недоступно",
-    searchNote:
-      "Поиск по русскому названию. Символы % и _ работают как шаблоны поиска.",
+    previousItems: "Предыдущие товары",
+    nextItems: "Следующие товары",
+    recommended: "Рекомендуемые продукты",
     gallery: "Изображение",
     ai: "ИИ-консультант",
     aiShort: "ИИ · помощь",
@@ -79,21 +104,21 @@ const copy = {
     all: "Barcha mahsulotlar",
     search: "Mahsulot qidirish",
     find: "Qidirish",
+    closeSearch: "Qidiruvni yopish",
+    language: "Til",
     loading: "Yuklanmoqda…",
     error:
       "Maʼlumotlarni yuklab boʻlmadi. Ulanishni tekshirib, qayta urinib koʻring.",
     retry: "Qayta urinish",
     empty: "Mahsulotlar topilmadi",
     unavailable: "Turkum mavjud emas",
-    preview: "Katalogdagi dastlabki mahsulotlar",
-    previewNote:
-      "Qisqa koʻrinish — toʻrttagacha mahsulot. Toʻliq assortiment katalogda.",
+    viewAll: "Hammasi",
+    sales: "Aksiyalar",
     details: "Mahsulot haqida batafsil",
     noImage: "Rasm mavjud emas",
     inStock: "Mavjud",
     outOfStock: "Mavjud emas",
     noPurchase: "Xarid qilish mumkin emas",
-    sizes: "Mavjud oʻlchamlar",
     description: "Tavsif",
     advantages: "Afzalliklari",
     info: "Qoʻshimcha maʼlumot",
@@ -115,8 +140,9 @@ const copy = {
       "Hayot uchun mahsulotlar",
     ],
     missing: "Mavjud emas",
-    searchNote:
-      "Ruscha nom boʻyicha qidirish. % va _ belgilaridan qidiruv andozasi sifatida foydalaniladi.",
+    previousItems: "Oldingi mahsulotlar",
+    nextItems: "Keyingi mahsulotlar",
+    recommended: "Tavsiya etilgan mahsulotlar",
     gallery: "Rasm",
     ai: "AI-maslahatchi",
     aiShort: "AI · yordam",
@@ -125,6 +151,13 @@ const copy = {
   },
 };
 const slugs = ["product", "vitaminy-set", "tehnika", "active-life"];
+/** Approved menu icon set A (D9), keyed by category slug. */
+const categoryIcons: Record<string, () => ReactNode> = {
+  product: PillIcon,
+  "vitaminy-set": GiftIcon,
+  tehnika: CookingPotIcon,
+  "active-life": HeartPulseIcon,
+};
 type Read<T> =
   | { status: "loading" }
   | { status: "error"; error: unknown }
@@ -188,15 +221,22 @@ function Image({
   src,
   name,
   lang,
+  lazy = false,
 }: {
   src: string | null;
   name: string;
   lang: api.Language;
+  lazy?: boolean;
 }) {
   const [failed, setFailed] = useState<string | null>(null);
   const safe = api.safeMedia(src);
   return safe && failed !== safe ? (
-    <img src={safe} alt={name} onError={() => setFailed(safe)} />
+    <img
+      src={safe}
+      alt={name}
+      loading={lazy ? "lazy" : undefined}
+      onError={() => setFailed(safe)}
+    />
   ) : (
     <span
       className="image-fallback"
@@ -256,10 +296,12 @@ function Card({
   change,
   chooseSize,
   disabled = false,
+  lazy = false,
 }: CardPurchases & {
   product: api.Product;
   lang: api.Language;
   disabled?: boolean;
+  lazy?: boolean;
 }) {
   const target = href({ view: "product", lang, page: 1, id: product.id });
   const [selectedSize, setSelectedSize] = useState("");
@@ -284,6 +326,7 @@ function Card({
           src={product.image_url || product.images[0] || null}
           name={product.name}
           lang={lang}
+          lazy={lazy}
         />
       </a>
       <div className="card-copy">
@@ -322,17 +365,15 @@ function Card({
 function Grid({
   products,
   lang,
-  home = false,
   lines,
   change,
   chooseSize,
 }: CardPurchases & {
   products: api.Product[];
   lang: api.Language;
-  home?: boolean;
 }) {
   return (
-    <div className={`product-grid${home ? " home-grid" : ""}`}>
+    <div className="product-grid">
       {products.map((p) => (
         <Card
           key={p.id}
@@ -359,6 +400,313 @@ function Recovery({ lang, title }: { lang: api.Language; title: string }) {
     </div>
   );
 }
+/** The site's one layout breakpoint: phones and tablets below 1000px. */
+const COMPACT_QUERY = "(max-width: 999px)";
+function subscribeCompact(change: () => void) {
+  const media = window.matchMedia(COMPACT_QUERY);
+  media.addEventListener("change", change);
+  return () => media.removeEventListener("change", change);
+}
+function useCompactWidth() {
+  return useSyncExternalStore(
+    subscribeCompact,
+    () => window.matchMedia(COMPACT_QUERY).matches,
+  );
+}
+/** Phone row hint (M6): random delay after the row comes into view, in ms. */
+const ROW_HINT_DELAY = [200, 600] as const;
+/** Phone row hint distance as a share of one card, so the first card stays partly visible. */
+const ROW_HINT_SHARE = [0.3, 0.55] as const;
+const between = ([low, high]: readonly [number, number]) =>
+  low + Math.random() * (high - low);
+/**
+ * Home rows (by element id) whose hint chance is used up in this document
+ * load: they shifted, or the visitor touched them first. Module state, so it
+ * outlives Home unmounting on a view change and resets on a reload.
+ */
+const hintedRows = new Set<string>();
+/**
+ * Phones (M6): a row whose cards do not fit, when it first comes into view,
+ * waits a small random delay and smoothly scrolls a small random distance, and
+ * stays there. Once per row per site visit (document load, OPT-01): a row
+ * that shifted or that the visitor touched, focused or scrolled stays at its
+ * start when Home is shown again without a reload. Not under reduced motion.
+ * Snapping is off for a shifted row (re-enabling it would snap the row
+ * straight back).
+ */
+function useRowHint(row: HTMLDivElement | null, enabled: boolean) {
+  useEffect(() => {
+    if (!row || !enabled) return;
+    const key = row.id;
+    const done = () => hintedRows.has(key);
+    if (done()) return;
+    let timer = 0;
+    const touched = () => {
+      hintedRows.add(key);
+      window.clearTimeout(timer);
+    };
+    const inputs = [
+      "pointerdown",
+      "touchstart",
+      "wheel",
+      "keydown",
+      "focusin",
+      "scroll",
+    ];
+    for (const type of inputs)
+      row.addEventListener(type, touched, { passive: true });
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (done()) observer.disconnect();
+        if (
+          done() ||
+          !entries.some((entry) => entry.isIntersecting) ||
+          !window.matchMedia(COMPACT_QUERY).matches
+        )
+          return;
+        observer.disconnect();
+        timer = window.setTimeout(() => {
+          const card = row.firstElementChild,
+            max = row.scrollWidth - row.clientWidth;
+          if (
+            done() ||
+            row.scrollLeft > 1 ||
+            max <= 1 ||
+            !(card instanceof HTMLElement) ||
+            !window.matchMedia(COMPACT_QUERY).matches ||
+            window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          )
+            return;
+          hintedRows.add(key);
+          row.dataset.hint = "";
+          row.scrollTo({
+            left: Math.min(
+              max,
+              Math.round(card.offsetWidth * between(ROW_HINT_SHARE)),
+            ),
+            behavior: "smooth",
+          });
+        }, between(ROW_HINT_DELAY));
+      },
+      { threshold: 0.5 },
+    );
+    observer.observe(row);
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(timer);
+      for (const type of inputs) row.removeEventListener(type, touched);
+    };
+  }, [row, enabled]);
+}
+/** Scroll state of one horizontal product row, for its header control. */
+function useSlider({ hint = false }: { hint?: boolean } = {}) {
+  const [row, setRow] = useState<HTMLDivElement | null>(null);
+  const [edges, setEdges] = useState({
+    start: true,
+    end: true,
+    overflow: false,
+  });
+  const compact = useCompactWidth();
+  useEffect(() => {
+    if (!row) return;
+    const measure = () => {
+      const max = row.scrollWidth - row.clientWidth;
+      // A row without overflow is at both ends.
+      const next = {
+        start: row.scrollLeft <= 1,
+        end: row.scrollLeft >= max - 1,
+        overflow: max > 1,
+      };
+      setEdges((current) =>
+        current.start === next.start &&
+        current.end === next.end &&
+        current.overflow === next.overflow
+          ? current
+          : next,
+      );
+    };
+    // The first observation also measures the row once it is in the layout.
+    const observer = new ResizeObserver(measure);
+    observer.observe(row);
+    row.addEventListener("scroll", measure, { passive: true });
+    return () => {
+      observer.disconnect();
+      row.removeEventListener("scroll", measure);
+    };
+  }, [row]);
+  useRowHint(row, hint);
+  return {
+    ...edges,
+    // Arrows only on desktop, for a row that exists and scrolls (V1, DES-01, M6).
+    arrows: !compact && row !== null && edges.overflow,
+    attach: setRow,
+    scroll(direction: -1 | 1) {
+      if (!row) return;
+      row.scrollBy({
+        left: direction * row.clientWidth,
+        behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+      });
+    },
+  };
+}
+type Slider = ReturnType<typeof useSlider>;
+/**
+ * Row header control. With arrows (desktop, the row exists and scrolls): the
+ * basket stepper frame [‹] Все [›], or the arrows only for rows without a
+ * catalogue target; an arrow at its end stays focusable. Without arrows (phones,
+ * loading, error, no overflow): the plain "Все ›" link, or nothing.
+ */
+function SliderControls({
+  slider,
+  rowId,
+  lang,
+  more,
+}: {
+  slider: Slider;
+  rowId: string;
+  lang: api.Language;
+  more?: { href: string; title: string };
+}) {
+  const t = copy[lang];
+  if (!slider.arrows)
+    return more ? (
+      <a
+        className="view-all-link"
+        href={more.href}
+        aria-label={`${t.viewAll}: ${more.title}`}
+      >
+        {t.viewAll}
+        <ChevronRight />
+      </a>
+    ) : null;
+  const arrow = (direction: -1 | 1) => {
+    const disabled = direction < 0 ? slider.start : slider.end;
+    return (
+      <button
+        type="button"
+        className="slider-arrow"
+        aria-label={direction < 0 ? t.previousItems : t.nextItems}
+        aria-controls={rowId}
+        aria-disabled={disabled}
+        onClick={() => {
+          if (!disabled) slider.scroll(direction);
+        }}
+      >
+        {direction < 0 ? <ChevronLeft /> : <ChevronRight />}
+      </button>
+    );
+  };
+  return (
+    <div className="slider-controls">
+      {arrow(-1)}
+      {more && (
+        <a
+          className="view-all"
+          href={more.href}
+          aria-label={`${t.viewAll}: ${more.title}`}
+        >
+          {t.viewAll}
+        </a>
+      )}
+      {arrow(1)}
+    </div>
+  );
+}
+function ProductRow({
+  products,
+  lang,
+  lines,
+  change,
+  chooseSize,
+  id,
+  rowRef,
+  lazy = false,
+}: CardPurchases & {
+  products: api.Product[];
+  lang: api.Language;
+  id: string;
+  rowRef: (node: HTMLDivElement | null) => void;
+  lazy?: boolean;
+}) {
+  return (
+    <div className="product-row" id={id} ref={rowRef}>
+      {products.map((p) => (
+        <Card
+          key={p.id}
+          product={p}
+          lang={lang}
+          lines={lines}
+          change={change}
+          chooseSize={chooseSize}
+          lazy={lazy}
+        />
+      ))}
+    </div>
+  );
+}
+function CategoryRow({
+  category,
+  title,
+  lang,
+  lines,
+  change,
+  chooseSize,
+}: CardPurchases & {
+  category: api.Category;
+  title: string;
+  lang: api.Language;
+}) {
+  // Swiping a home row must reach every product of its category.
+  const read = useRead(`${lang}:${category.id}`, (s) =>
+    api.categoryProducts(lang, s, category.id),
+  );
+  const slider = useSlider({ hint: true });
+  // The Mini App hides a category section without products.
+  if (read.result.status === "ready" && !read.result.data.length) return null;
+  const id = `home-${category.slug}`;
+  return (
+    <section
+      className="home-section"
+      data-category={category.slug}
+      aria-labelledby={id}
+    >
+      <div className="section-head slider-head">
+        <h2 id={id}>{title}</h2>
+        <SliderControls
+          slider={slider}
+          rowId={`${id}-row`}
+          lang={lang}
+          more={{
+            href: href({
+              view: "catalogue",
+              lang,
+              page: 1,
+              category: category.id,
+            }),
+            title,
+          }}
+        />
+      </div>
+      <State result={read.result} lang={lang} retry={read.retry}>
+        {read.result.status === "ready" && (
+          <ProductRow
+            id={`${id}-row`}
+            rowRef={slider.attach}
+            products={read.result.data}
+            lang={lang}
+            lines={lines}
+            change={change}
+            chooseSize={chooseSize}
+            lazy
+          />
+        )}
+      </State>
+    </section>
+  );
+}
+/** Mini App home order on the shared Shop data, then video, FAQ and consultation. */
 function Home({
   lang,
   categories,
@@ -366,89 +714,81 @@ function Home({
   lines,
   change,
   obscured,
-  onAnnouncement,
   chooseSize,
 }: CardPurchases & {
   obscured: boolean;
-  onAnnouncement: (index: number, trigger: HTMLButtonElement) => void;
   lang: api.Language;
   categories: Read<api.Category[]>;
   retry: () => void;
 }) {
-  const t = copy[lang],
-    preview = useRead(lang, (s) => api.products(lang, s, 1, 4));
+  const t = copy[lang];
+  const promo = useRead(lang, (s) =>
+    Promise.all([api.banners(lang, s), api.bannerInterval(s)]),
+  );
+  const sale = useRead(lang, (s) => api.saleProducts(lang, s));
+  const saleSlider = useSlider({ hint: true });
+  const ready = categories.status === "ready" ? categories.data : [];
   return (
     <>
-      <Hero lang={lang} obscured={obscured} onOpen={onAnnouncement} />
-      <div className="section-head">
-        <h1>{t.catalogue}</h1>
-        <a href={href({ view: "catalogue", lang, page: 1 })}>{t.all} →</a>
-      </div>
-      <State result={categories} lang={lang} retry={retry}>
-        {categories.status === "ready" && (
-          <div className="group-grid">
-            {slugs.map((slug, i) => {
-              const c = categories.data.find((item) => item.slug === slug);
-              const body = (
-                <>
-                  <div className="group-media">
-                    <Image
-                      src={c?.image_url || null}
-                      name={c?.name || t.groups[i] || slug}
-                      lang={lang}
-                    />
-                  </div>
-                  <div className="group-copy">
-                    <h2>{c?.name || t.groups[i]}</h2>
-                    {c?.description && <p>{c.description}</p>}
-                    {!c && <p className="muted">{t.missing}</p>}
-                  </div>
-                </>
-              );
-              return c ? (
-                <a
-                  className="group-tile"
-                  key={slug}
-                  href={href({
-                    view: "catalogue",
-                    lang,
-                    page: 1,
-                    category: c.id,
-                  })}
-                >
-                  {body}
-                </a>
-              ) : (
-                <div className="group-tile unavailable" key={slug}>
-                  {body}
-                </div>
-              );
-            })}
+      <h1 className="visually-hidden">BIOTACT</h1>
+      {promo.result.status === "loading" ? (
+        <div className="hero-stage hero-loading" aria-hidden="true" />
+      ) : (
+        promo.result.status === "ready" &&
+        promo.result.data[0].length > 0 && (
+          <Hero
+            lang={lang}
+            banners={promo.result.data[0]}
+            interval={promo.result.data[1]}
+            categories={ready}
+            obscured={obscured}
+          />
+        )
+      )}
+      {sale.result.status === "ready" && sale.result.data.length > 0 && (
+        <section
+          className="home-section"
+          data-category="sale"
+          aria-labelledby="home-sale"
+        >
+          <div className="section-head slider-head">
+            <h2 id="home-sale">{t.sales}</h2>
+            <SliderControls
+              slider={saleSlider}
+              rowId="home-sale-row"
+              lang={lang}
+            />
           </div>
-        )}
+          <ProductRow
+            id="home-sale-row"
+            rowRef={saleSlider.attach}
+            products={sale.result.data}
+            lang={lang}
+            lines={lines}
+            change={change}
+            chooseSize={chooseSize}
+          />
+        </section>
+      )}
+      <State result={categories} lang={lang} retry={retry}>
+        {slugs.map((slug) => {
+          const c = ready.find((item) => item.slug === slug);
+          return c ? (
+            <CategoryRow
+              key={slug}
+              category={c}
+              title={c.name}
+              lang={lang}
+              lines={lines}
+              change={change}
+              chooseSize={chooseSize}
+            />
+          ) : null;
+        })}
       </State>
-      <section className="preview">
-        <div className="section-head">
-          <h2>{t.preview}</h2>
-          <a href={href({ view: "catalogue", lang, page: 1 })}>{t.all} →</a>
-        </div>
-        <p className="muted preview-note">{t.previewNote}</p>
-        <State result={preview.result} lang={lang} retry={preview.retry}>
-          {preview.result.status === "ready" &&
-            (preview.result.data.items.length ? (
-              <Grid
-                products={preview.result.data.items}
-                lang={lang}
-                home
-                lines={lines}
-                change={change}
-                chooseSize={chooseSize}
-              />
-            ) : (
-              <p role="status">{t.empty}</p>
-            ))}
-        </State>
-      </section>
+      <Video lang={lang} />
+      <Faq lang={lang} />
+      <Consultation lang={lang} />
     </>
   );
 }
@@ -514,7 +854,6 @@ function Catalogue({
                     {t.search}: «{loc.q}»
                   </p>
                 )}
-                <p className="muted search-note">{t.searchNote}</p>
                 <State result={data.result} lang={lang} retry={data.retry}>
                   {data.result.status === "ready" && (
                     <>
@@ -565,12 +904,76 @@ function Catalogue({
     </>
   );
 }
+/** Admin text with the Mini App's **bold** markup; everything else stays plain text. */
+function RichText({ text }: { text: string }) {
+  return text
+    .split(/(\*\*[^*]+\*\*)/g)
+    .map((part, i) =>
+      part.length > 4 && part.startsWith("**") && part.endsWith("**") ? (
+        <strong key={i}>{part.slice(2, -2)}</strong>
+      ) : (
+        part
+      ),
+    );
+}
+/** Mini App "similar products": up to five others of the same category, hidden otherwise. */
+function Recommended({
+  product,
+  lang,
+  lines,
+  change,
+  chooseSize,
+}: CardPurchases & { product: api.Product; lang: api.Language }) {
+  const t = copy[lang];
+  const category = product.category_id;
+  const read = useRead(
+    `${lang}:${category}:${product.id}`,
+    (s) => api.products(lang, s, 1, 6, category ?? undefined),
+    category !== null,
+  );
+  const slider = useSlider();
+  if (read.result.status !== "ready") return null;
+  const items = read.result.data.items
+    .filter((item) => item.id !== product.id && item.category_id === category)
+    .slice(0, 5);
+  if (!items.length) return null;
+  return (
+    <section
+      className="home-section product-recommended"
+      aria-labelledby="product-recommended"
+      onClickCapture={(e) => {
+        // As in the Mini App, an opened recommendation starts at the top of its page.
+        if (e.target instanceof Element && e.target.closest("a[href]"))
+          window.scrollTo(0, 0);
+      }}
+    >
+      <div className="section-head slider-head">
+        <h2 id="product-recommended">{t.recommended}</h2>
+        <SliderControls
+          slider={slider}
+          rowId="product-recommended-row"
+          lang={lang}
+        />
+      </div>
+      <ProductRow
+        id="product-recommended-row"
+        rowRef={slider.attach}
+        products={items}
+        lang={lang}
+        lines={lines}
+        change={change}
+        chooseSize={chooseSize}
+      />
+    </section>
+  );
+}
 function Product({
   loc,
   categories,
   lines,
   change,
-}: Purchases & {
+  chooseSize,
+}: CardPurchases & {
   loc: Location;
   categories: Read<api.Category[]>;
 }) {
@@ -598,6 +1001,7 @@ function Product({
         ?.quantity || 0
     : 0;
   const basket = basketCopy[lang];
+  const sizes = [...new Set(p.available_sizes.filter((v) => v.trim()))];
   const media = [
     ...new Set(
       [p.image_url, ...p.images].filter(
@@ -609,7 +1013,7 @@ function Product({
     categories.status === "ready"
       ? categories.data.find((item) => item.id === p.category_id)
       : undefined;
-  const video = api.safeMedia(p.video_url, true);
+  const video = api.youtubeId(p.video_url);
   return (
     <>
       <nav className="breadcrumbs" aria-label={t.catalogue}>
@@ -653,28 +1057,28 @@ function Product({
           <h1>{p.name}</h1>
           <Price product={p} lang={lang} />
           <Availability product={p} lang={lang} />
-          {p.requires_size && p.available_sizes.length > 0 && (
-            <p>
-              {t.sizes}: {p.available_sizes.join(", ")}
-            </p>
-          )}
           <div className="detail-purchase">
-            {p.requires_size && (
-              <label className="size-choice">
-                {basket.size}
-                <select
+            {p.requires_size && sizes.length > 0 && (
+              // One button per available size (SZ1), as in the card size dialog.
+              <div className="size-choice">
+                <span aria-hidden="true">{basket.size}</span>
+                <div
+                  className="size-chips"
+                  role="group"
                   aria-label={`${basket.size}: ${p.name}`}
-                  value={selectedSize}
-                  onChange={(e) => setSelectedSize(e.target.value)}
                 >
-                  <option value="">{basket.choose}</option>
-                  {p.available_sizes.map((value) => (
-                    <option key={value} value={value}>
+                  {sizes.map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={selectedSize === value}
+                      onClick={() => setSelectedSize(value)}
+                    >
                       {value}
-                    </option>
+                    </button>
                   ))}
-                </select>
-              </label>
+                </div>
+              </div>
             )}
             <Quantity
               add
@@ -685,19 +1089,16 @@ function Product({
               onChange={(delta) => change(p, size, delta)}
             />
           </div>
-          {video && (
-            <a href={video} target="_blank" rel="noopener noreferrer">
-              {t.video} ↗
-            </a>
+          {p.description && (
+            <section className="product-text product-description">
+              <h2>{t.description}</h2>
+              <p>
+                <RichText text={p.description} />
+              </p>
+            </section>
           )}
         </div>
       </div>
-      {p.description && (
-        <section className="product-text">
-          <h2>{t.description}</h2>
-          <p>{p.description}</p>
-        </section>
-      )}
       {p.advantages.length > 0 && (
         <section className="product-text">
           <h2>{t.advantages}</h2>
@@ -711,25 +1112,49 @@ function Product({
       {p.additional_info && (
         <section className="product-text">
           <h2>{p.additional_info_title || t.info}</h2>
-          <p>{p.additional_info}</p>
+          <p>
+            <RichText text={p.additional_info} />
+          </p>
         </section>
       )}
       {p.disclaimer && (
-        <section className="product-text">
-          <h2>{t.disclaimer}</h2>
-          <p>{p.disclaimer}</p>
+        <section className="product-text product-note-section">
+          <p className="product-note" role="note" aria-label={t.disclaimer}>
+            {p.disclaimer}
+          </p>
         </section>
       )}
+      {video && (
+        <section className="product-text product-video" aria-label={t.video}>
+          <VideoPlayer
+            videoId={video}
+            label={`${t.video}: ${p.name}`}
+            frameTitle={`${p.name} · YouTube`}
+          />
+        </section>
+      )}
+      <Recommended
+        product={p}
+        lang={lang}
+        lines={lines}
+        change={change}
+        chooseSize={chooseSize}
+      />
     </>
   );
 }
-function Search({ loc }: { loc: Location }) {
+/**
+ * Product search. On phones it is the in-place expanded form of the header
+ * search icon (`onClose`): it takes focus, and submit closes it.
+ */
+function Search({ loc, onClose }: { loc: Location; onClose?: () => void }) {
   const [search, setSearch] = useState(loc.q || "");
   const t = copy[loc.lang];
   return (
     <form
       className="search"
       role="search"
+      {...(onClose ? { id: "top-search" } : {})}
       onSubmit={(e) => {
         e.preventDefault();
         window.location.hash =
@@ -739,9 +1164,12 @@ function Search({ loc }: { loc: Location }) {
             page: 1,
             ...(search.trim() ? { q: search.trim() } : {}),
           }).split("#")[1] || "";
+        onClose?.();
       }}
     >
+      {onClose && <SearchIcon />}
       <input
+        autoFocus={!!onClose}
         aria-label={t.search}
         placeholder={t.search}
         value={search}
@@ -750,6 +1178,64 @@ function Search({ loc }: { loc: Location }) {
       <button type="submit">{t.find}</button>
     </form>
   );
+}
+/** Scroll travel that changes the phone header state; smaller moves accumulate. */
+const HEADER_SCROLL_THRESHOLD = 10;
+/**
+ * Phone header hides on downward scroll and returns on upward scroll (M5).
+ * `active` is false on desktop and while a surface or the search is open; the
+ * header is shown on every change of `active` or `view`. Travel counts only
+ * after the visitor's own scroll input since that change, so content loading
+ * into a new view (and the browser's scroll clamping and restoration) never
+ * hides it. The position is clamped, so overscroll bounce is not travel.
+ */
+function useHiddenHeader(
+  active: boolean,
+  view: string,
+  header: RefObject<HTMLElement | null>,
+) {
+  const [hidden, setHidden] = useState(false);
+  const [seen, setSeen] = useState({ active, view });
+  if (seen.active !== active || seen.view !== view) {
+    setSeen({ active, view });
+    setHidden(false);
+  }
+  useEffect(() => {
+    if (!active) return;
+    const position = () =>
+      Math.min(
+        Math.max(window.scrollY, 0),
+        Math.max(document.documentElement.scrollHeight - window.innerHeight, 0),
+      );
+    let last = position(),
+      frame = 0,
+      armed = false;
+    const arm = () => {
+      armed = true;
+    };
+    const update = () => {
+      frame = 0;
+      const y = position();
+      if (!armed) last = y;
+      if (Math.abs(y - last) < HEADER_SCROLL_THRESHOLD) return;
+      setHidden(y > last && y > (header.current?.offsetHeight ?? 0));
+      last = y;
+    };
+    const scroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    const inputs = ["wheel", "touchstart", "keydown", "pointerdown"];
+    for (const type of inputs)
+      window.addEventListener(type, arm, { capture: true, passive: true });
+    window.addEventListener("scroll", scroll, { passive: true });
+    return () => {
+      for (const type of inputs)
+        window.removeEventListener(type, arm, { capture: true });
+      window.removeEventListener("scroll", scroll);
+      cancelAnimationFrame(frame);
+    };
+  }, [active, view, header]);
+  return { hidden, reveal: () => setHidden(false) };
 }
 export default function App() {
   const [hash, setHash] = useState(window.location.hash);
@@ -760,24 +1246,32 @@ export default function App() {
   const basket = useGuestBasket(loc.lang);
   const { lines, change: changeQuantity, units } = basket;
   const [surface, setSurface] = useState<
-    "menu" | "assistant" | "basket" | "announcement" | "size" | null
+    "menu" | "assistant" | "basket" | "size" | null
   >(null);
   const [sizeRequest, setSizeRequest] = useState<{
     product: api.Product;
     onAdded: (size: string) => void;
     beforeAdd?: BeforeAdd;
   } | null>(null);
-  const [announcement, setAnnouncement] = useState(0);
   // The latest creation response (with its CSRF token) stays in memory for the next order view.
   const [created, setCreated] = useState<{ order: Order; epoch: number }>();
   const [compact, setCompact] = useState(
     () => window.matchMedia("(max-width: 999px)").matches,
   );
+  // Phone header search: an icon that expands into the form in place (M2).
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchToggle = useRef<HTMLButtonElement>(null),
+    searchFocusReturn = useRef(false);
+  const header = useRef<HTMLElement>(null);
+  const headerScroll = useHiddenHeader(
+    compact && surface === null && !searchOpen,
+    hash,
+    header,
+  );
   const hashRef = useRef(hash);
   const dialog = useRef<HTMLDialogElement>(null),
     assistantDialog = useRef<HTMLDialogElement>(null),
     basketDialog = useRef<HTMLDialogElement>(null),
-    exampleDialog = useRef<HTMLDialogElement>(null),
     sizeDialog = useRef<HTMLDialogElement>(null),
     sizeOrigin = useRef<HTMLElement | null>(null),
     sizeEpoch = useRef(0),
@@ -793,16 +1287,14 @@ export default function App() {
       if (next.view !== "order") setCreated(undefined);
       hashRef.current = window.location.hash;
       setHash(window.location.hash);
+      setSearchOpen(false);
       setSurface((current) =>
-        current === "announcement" ||
-        current === "size" ||
-        (current === "basket" && !languageOnly)
+        current === "size" || (current === "basket" && !languageOnly)
           ? null
           : current,
       );
       setSizeRequest(null);
       if (
-        exampleDialog.current?.open ||
         sizeDialog.current?.open ||
         (basketDialog.current?.open && !languageOnly)
       )
@@ -828,7 +1320,10 @@ export default function App() {
     const card = sizeOrigin.current;
     sizeOrigin.current = null;
     requestAnimationFrame(() => {
-      const target = origin.current;
+      let target = origin.current;
+      // The basket button moves between the side menu and the top bar at the breakpoint.
+      if (target && !target.isConnected && target.matches(".basket-button"))
+        target = document.querySelector<HTMLElement>(".basket-button");
       if (
         target?.getClientRects().length &&
         !target.closest("dialog:not([open])")
@@ -847,7 +1342,7 @@ export default function App() {
     });
   }
   function show(
-    next: "menu" | "assistant" | "basket" | "announcement" | "size",
+    next: "menu" | "assistant" | "basket" | "size",
     trigger: HTMLElement,
   ) {
     origin.current = trigger;
@@ -902,6 +1397,7 @@ export default function App() {
     const change = () => {
       setCompact(media.matches);
       if (!media.matches) {
+        setSearchOpen(false);
         if (dialog.current?.contains(document.activeElement))
           requestAnimationFrame(() =>
             document.querySelector<HTMLElement>(".sidebar .brand")?.focus(),
@@ -920,11 +1416,9 @@ export default function App() {
           ? assistantDialog.current
           : surface === "basket"
             ? basketDialog.current
-            : surface === "announcement"
-              ? exampleDialog.current
-              : surface === "size"
-                ? sizeDialog.current
-                : null;
+            : surface === "size"
+              ? sizeDialog.current
+              : null;
     const modal = surface !== "assistant" || compact;
     const moveFocus =
       target && (!target.open || target.contains(document.activeElement));
@@ -932,7 +1426,6 @@ export default function App() {
       dialog.current,
       assistantDialog.current,
       basketDialog.current,
-      exampleDialog.current,
       sizeDialog.current,
     ]) {
       if (node?.open && (node !== target || node.matches(":modal") !== modal))
@@ -950,6 +1443,17 @@ export default function App() {
     () => () => document.documentElement.classList.remove("modal-open"),
     [],
   );
+  useEffect(() => {
+    // Closing the expanded search returns focus to its icon once it is back.
+    if (!searchOpen && searchFocusReturn.current) {
+      searchFocusReturn.current = false;
+      searchToggle.current?.focus();
+    }
+  }, [searchOpen]);
+  function closeSearch() {
+    searchFocusReturn.current = true;
+    setSearchOpen(false);
+  }
   const context =
     loc.view === "home"
       ? t.home
@@ -959,18 +1463,65 @@ export default function App() {
           ? `${t.product} №${loc.id}`
           : t.publicContext;
   const all = href({ view: "catalogue", lang: loc.lang, page: 1 });
-  const navigation = (
+  const basketButton = (
+    <button
+      className={compact ? "basket-button top-icon" : "basket-button"}
+      aria-label={`${basketCopy[loc.lang].title}${units ? ` · ${units}` : ""}`}
+      onClick={(e) => show("basket", e.currentTarget)}
+    >
+      <CartIcon />
+      <span className="basket-label">{basketCopy[loc.lang].title}</span>
+      {units > 0 && (
+        <span className="basket-badge" aria-hidden="true">
+          {units}
+        </span>
+      )}
+    </button>
+  );
+  const languages = (labelledBy?: string) => (
+    <div
+      className="languages"
+      {...(labelledBy
+        ? { role: "group", "aria-labelledby": labelledBy }
+        : { "aria-label": "Language" })}
+    >
+      <a
+        lang="ru"
+        aria-current={loc.lang === "ru" ? "true" : undefined}
+        href={href({ ...loc, lang: "ru" })}
+      >
+        RU
+      </a>
+      <a
+        lang="uz"
+        aria-current={loc.lang === "uz" ? "true" : undefined}
+        href={href({ ...loc, lang: "uz" })}
+      >
+        UZ
+      </a>
+    </div>
+  );
+  // The basket sits in the visible side menu on desktop and in the top bar on phones.
+  const navigation = (sidebar: boolean) => (
     <>
       <a
         className="brand"
         href={href({ view: "home", lang: loc.lang, page: 1 })}
+        onClick={homeTop}
       >
-        BIOTACT
+        <img
+          className="brand-logo"
+          src={logoUrl}
+          alt="BIOTACT"
+          width={351}
+          height={125}
+        />
       </a>
       <nav className="nav-primary" aria-label={t.menu}>
         <a
           aria-current={loc.view === "home" ? "page" : undefined}
           href={href({ view: "home", lang: loc.lang, page: 1 })}
+          onClick={homeTop}
         >
           {t.home}
         </a>
@@ -980,12 +1531,16 @@ export default function App() {
         </button>
         {expanded && (
           <div className="category-nav">
-            <a href={all}>{t.all}</a>
+            <a href={all}>
+              <LayoutGridIcon />
+              {t.all}
+            </a>
             {slugs.map((slug, i) => {
               const c =
                 cats.result.status === "ready"
                   ? cats.result.data.find((v) => v.slug === slug)
                   : undefined;
+              const CategoryIcon = categoryIcons[slug];
               return c ? (
                 <a
                   key={slug}
@@ -996,18 +1551,15 @@ export default function App() {
                     category: c.id,
                   })}
                 >
+                  {CategoryIcon && <CategoryIcon />}
                   {c.name}
                 </a>
-              ) : (
+              ) : cats.result.status === "ready" ? (
                 <span key={slug} className="muted">
-                  {t.groups[i]} —{" "}
-                  {cats.result.status === "ready"
-                    ? t.missing
-                    : cats.result.status === "error"
-                      ? t.error
-                      : t.loading}
+                  {CategoryIcon && <CategoryIcon />}
+                  {t.groups[i]} — {t.missing}
                 </span>
-              );
+              ) : null;
             })}
           </div>
         )}
@@ -1020,13 +1572,24 @@ export default function App() {
           {t.ai}
           <span aria-hidden="true">↗</span>
         </button>
+        {sidebar && !compact && basketButton}
         <a
+          className={sidebar ? undefined : "nav-account"}
           aria-current={loc.view === "account" ? "page" : undefined}
           href={href({ view: "account", lang: loc.lang, page: 1 })}
         >
+          {!sidebar && <UserIcon />}
           {t.account}
         </a>
       </nav>
+      {/* Phones choose the language once in the menu, not in the top bar. */}
+      {!sidebar && compact && (
+        <div className="drawer-language">
+          <GlobeIcon />
+          <span id="drawer-language-label">{t.language}</span>
+          {languages("drawer-language-label")}
+        </div>
+      )}
     </>
   );
   return (
@@ -1041,7 +1604,7 @@ export default function App() {
       >
         {t.catalogue} ↓
       </a>
-      <aside className="sidebar">{navigation}</aside>
+      <aside className="sidebar">{navigation(true)}</aside>
       <dialog
         ref={dialog}
         className="drawer"
@@ -1061,59 +1624,86 @@ export default function App() {
         <button className="drawer-close" data-initial-focus onClick={dismiss}>
           {t.close} ×
         </button>
-        {navigation}
+        {navigation(false)}
       </dialog>
       <div className="workspace">
-        <header className="topbar">
-          <button
-            className="menu-toggle"
-            onClick={(e) => show("menu", e.currentTarget)}
-          >
-            {t.menu} ☰
-          </button>
-          <Search key={loc.q || ""} loc={loc} />
-          <div className="top-utilities">
-            <button
-              className="top-ai"
-              aria-controls="consultant"
-              aria-expanded={surface === "assistant"}
-              onClick={(e) => show("assistant", e.currentTarget)}
-            >
-              {t.aiShort}
-            </button>
-            <button
-              className="basket-button"
-              aria-label={`${basketCopy[loc.lang].title}${units ? ` · ${units}` : ""}`}
-              onClick={(e) => show("basket", e.currentTarget)}
-            >
-              <CartIcon />
-              <span className="basket-label">{basketCopy[loc.lang].title}</span>
-              {units > 0 && (
-                <span className="basket-badge" aria-hidden="true">
-                  {units}
-                </span>
-              )}
-            </button>
-            <a href={href({ view: "account", lang: loc.lang, page: 1 })}>
-              {t.account}
-            </a>
-            <div className="languages" aria-label="Language">
-              <a
-                lang="ru"
-                aria-current={loc.lang === "ru" ? "true" : undefined}
-                href={href({ ...loc, lang: "ru" })}
+        <header
+          ref={header}
+          className="topbar"
+          data-hidden={headerScroll.hidden || undefined}
+          // Focus that reaches the header (Tab, focus return) shows it.
+          onFocus={headerScroll.reveal}
+          // Focus leaving it after a scroll made while focus was inside does
+          // not slide it away by itself; the next downward scroll does.
+          onBlur={(e) => {
+            if (
+              !(e.relatedTarget instanceof Node) ||
+              !e.currentTarget.contains(e.relatedTarget)
+            )
+              headerScroll.reveal();
+          }}
+          onKeyDown={(e) => {
+            if (compact && searchOpen && e.key === "Escape") {
+              e.preventDefault();
+              closeSearch();
+            }
+          }}
+        >
+          {compact && searchOpen ? (
+            // Expanded phone search takes the place of the whole row (D2).
+            <>
+              <Search key={loc.q || ""} loc={loc} onClose={closeSearch} />
+              <button
+                className="top-icon search-close"
+                aria-label={t.closeSearch}
+                onClick={closeSearch}
               >
-                RU
-              </a>
-              <a
-                lang="uz"
-                aria-current={loc.lang === "uz" ? "true" : undefined}
-                href={href({ ...loc, lang: "uz" })}
+                <CloseIcon />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                className="menu-toggle"
+                onClick={(e) => show("menu", e.currentTarget)}
               >
-                UZ
-              </a>
-            </div>
-          </div>
+                {t.menu} ☰
+              </button>
+              {!compact && <Search key={loc.q || ""} loc={loc} />}
+              <div className="top-utilities">
+                {compact && (
+                  <button
+                    ref={searchToggle}
+                    className="top-icon top-search"
+                    aria-label={t.search}
+                    // The form exists only while expanded, and then this
+                    // icon is not rendered: no aria-controls to a missing id.
+                    aria-expanded={false}
+                    onClick={() => setSearchOpen(true)}
+                  >
+                    <SearchIcon />
+                  </button>
+                )}
+                <button
+                  className={compact ? "top-icon top-ai" : "top-ai"}
+                  aria-label={compact ? t.ai : undefined}
+                  aria-controls="consultant"
+                  aria-expanded={surface === "assistant"}
+                  onClick={(e) => show("assistant", e.currentTarget)}
+                >
+                  {compact ? <SparklesIcon /> : t.aiShort}
+                </button>
+                {compact && basketButton}
+                {/* Phones reach Account and the language in the menu (M3, M4). */}
+                {!compact && (
+                  <a href={href({ view: "account", lang: loc.lang, page: 1 })}>
+                    {t.account}
+                  </a>
+                )}
+                {!compact && languages()}
+              </div>
+            </>
+          )}
         </header>
         <main id="content" className="content" tabIndex={-1}>
           {loc.view === "home" && (
@@ -1126,10 +1716,6 @@ export default function App() {
               change={changeQuantity}
               chooseSize={chooseSize}
               obscured={surface !== null}
-              onAnnouncement={(index, trigger) => {
-                setAnnouncement(index);
-                show("announcement", trigger);
-              }}
             />
           )}
           {loc.view === "catalogue" && (
@@ -1150,9 +1736,10 @@ export default function App() {
               categories={cats.result}
               lines={lines}
               change={changeQuantity}
+              chooseSize={chooseSize}
             />
           )}
-          {loc.view === "account" && <Account />}
+          {loc.view === "account" && <Account lang={loc.lang} />}
           {loc.view === "order" && (
             <OrderView
               key={created?.epoch ?? 0}
@@ -1166,28 +1753,8 @@ export default function App() {
             <Recovery lang={loc.lang} title={t.invalid} />
           )}
         </main>
-        <footer className="page-footer">BIOTACT</footer>
+        <CompanyFooter lang={loc.lang} />
       </div>
-      <dialog
-        ref={exampleDialog}
-        className="hero-example"
-        aria-labelledby="example-title"
-        onClose={() => {
-          if (surface === "announcement" && !exampleDialog.current?.open)
-            dismiss();
-        }}
-        onCancel={(e) => {
-          e.preventDefault();
-          dismiss();
-        }}
-        onKeyDown={dialogKeys}
-      >
-        <ExampleMaterial
-          lang={loc.lang}
-          index={announcement}
-          onClose={dismiss}
-        />
-      </dialog>
       <Assistant
         key={href(loc)}
         active={surface === "assistant"}
@@ -1253,9 +1820,6 @@ export default function App() {
           retry={basket.retry}
           notice={basket.notice}
           revision={basket.revision + basketLanguageRevision}
-          onLanguage={(lang) => {
-            window.location.assign(href({ ...loc, lang }));
-          }}
           dialogRef={basketDialog}
           onClose={() => {
             if (surface === "basket") dismiss();

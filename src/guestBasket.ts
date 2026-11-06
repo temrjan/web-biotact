@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { detail, ReadError, type Language, type Product } from "./catalogue";
 
 export const BASKET_STORAGE_KEY = "biotact.website.basket.v1";
@@ -89,6 +89,19 @@ export function changeSelection(
     ? [...items, item]
     : items.map((old, i) => (i === index ? item : old));
 }
+/** Remove every line whose exact (product, size) was bought; keep all others. Idempotent. */
+export function removePurchased(
+  items: Selection[],
+  bought: { product_id: number | null; size: string | null }[],
+): Selection[] {
+  const paid = new Set(
+    bought.map((line) => JSON.stringify([line.product_id, line.size])),
+  );
+  const kept = items.filter(
+    (item) => !paid.has(JSON.stringify([item.product_id, item.size])),
+  );
+  return kept.length === items.length ? items : kept;
+}
 function initialBasket() {
   let items: Selection[] = [],
     notice: Notice = null;
@@ -175,6 +188,16 @@ export function useGuestBasket(lang: Language) {
       ? [{ product: entry.product, size: entry.size, quantity: entry.quantity }]
       : [],
   );
+  const removeBought = useCallback(
+    (bought: { product_id: number | null; size: string | null }[]) =>
+      setState((old) => {
+        const items = removePurchased(old.items, bought);
+        return items === old.items
+          ? old
+          : { ...old, items, revision: old.revision + 1 };
+      }),
+    [],
+  );
   function change(product: Product, size: string | null, delta: number) {
     if (delta > 0 && !selectionAvailable(product, size)) return;
     setState((old) => {
@@ -198,6 +221,7 @@ export function useGuestBasket(lang: Language) {
     notice: state.notice,
     revision: state.revision,
     units: state.items.reduce((sum, item) => sum + item.quantity, 0),
+    removeBought,
     remove(id: number, size: string | null) {
       setState((old) => ({
         ...old,

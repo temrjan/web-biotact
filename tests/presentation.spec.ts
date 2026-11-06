@@ -2023,7 +2023,8 @@ test("remembered exact variants survive reload, a new page and optional unavaila
   }
 });
 
-test("guest validation, local review, draft lifetime and privacy cross the actual browser request and storage boundaries", async ({
+// Class-1 guest checkout boundaries (WS-02, WS-03, WS-06, WS-11, D-1, D-3).
+test("guest validation, server review, unaccepted terms, draft lifetime and privacy cross the actual browser request and storage boundaries", async ({
   page,
 }, testInfo) => {
   await fixture(page);
@@ -2064,9 +2065,12 @@ test("guest validation, local review, draft lifetime and privacy cross the actua
   await phone.press("Enter");
   await expect(name).toBeFocused();
   await expect(page.locator(".guest-error")).toHaveCount(3);
+  await expect(page.locator("#guest-phone-error")).toHaveText(
+    "Укажите телефон: от 9 до 15 цифр. Допустимы пробелы, скобки, дефисы, точки и плюс в начале.",
+  );
   const details = {
     name: "李 Guest-Private <b>Тест</b>",
-    phone: "+1 (23)-4.5",
+    phone: "+998 (90) 555-01.23",
     address: "Guest-Private 東京, дом 1\nвход 2",
   };
   await name.fill(details.name);
@@ -2077,21 +2081,23 @@ test("guest validation, local review, draft lifetime and privacy cross the actua
     .click();
   await expect(page.locator(".guest-review")).toContainText(details.name);
   await expect(page.locator(".guest-review b")).toHaveCount(0);
-  await expect(page.locator("#guest-payment-note")).toContainText(
-    "Заказ ещё не создан",
-  );
-  await expect(
-    page.getByRole("button", { name: "Оплата недоступна", exact: true }),
-  ).toBeDisabled();
+  await expect(page.locator(".guest-checkout .basket-total")).toBeVisible();
+  const accept = page.getByRole("checkbox");
+  await expect(accept).not.toBeChecked();
   await page.screenshot({ path: testInfo.outputPath("guest-review-1440.png") });
   const before = page.url();
+  // Without accepted terms, repeated presses and Enter create nothing.
   await page
-    .getByRole("button", { name: "Оплата недоступна", exact: true })
+    .getByRole("button", { name: "Оформить заказ", exact: true })
     .evaluate((button: HTMLButtonElement) => {
       button.click();
       button.click();
     });
   await page.keyboard.press("Enter");
+  await expect(page.locator("#guest-accept-error")).toHaveText(
+    "Чтобы оформить заказ, примите условия.",
+  );
+  await expect(accept).toBeFocused();
   expect(page.url()).toBe(before);
   await expect(page.locator(".basket-badge")).toHaveText("1");
   await page
@@ -2105,11 +2111,11 @@ test("guest validation, local review, draft lifetime and privacy cross the actua
   await page.locator(".guest-continue").click();
   await expect(name).toHaveValue(details.name);
   await expect(page.locator(".guest-review")).toHaveCount(0);
-  await phone.fill("7");
+  await phone.fill("90 777 77 77");
   await page
     .getByRole("button", { name: "Проверить данные", exact: true })
     .click();
-  await expect(page.locator(".guest-review")).toContainText("7");
+  await expect(page.locator(".guest-review")).toContainText("90 777 77 77");
   await expect(page.locator(".basket-unit")).toContainText("× 2");
   await page
     .getByRole("button", { name: "Назад к данным", exact: true })
@@ -2118,7 +2124,7 @@ test("guest validation, local review, draft lifetime and privacy cross the actua
   await expect(page.getByLabel("Ism", { exact: true })).toHaveValue(
     details.name,
   );
-  await expect(page.getByLabel("Aloqa telefoni")).toHaveValue("7");
+  await expect(page.getByLabel("Aloqa telefoni")).toHaveValue("90 777 77 77");
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });
     await page.evaluate(
@@ -2188,9 +2194,21 @@ test("guest validation, local review, draft lifetime and privacy cross the actua
   expect(JSON.stringify(storage)).not.toContain(details.phone);
   expect(JSON.stringify(requests)).not.toContain(details.phone);
   expect(consoleMessages.join("\n")).not.toContain("Guest-Private");
-  expect(requests.filter((r) => !["GET", "HEAD"].includes(r.method))).toEqual(
-    [],
-  );
+  // Review sends only the basket lines for a server quote; no order is created.
+  const writes = requests.filter((r) => !["GET", "HEAD"].includes(r.method));
+  expect(writes.length).toBeGreaterThan(0);
+  for (const write of writes) {
+    expect(new URL(write.url).pathname).toBe("/api/v1/guest/quote");
+    expect(JSON.parse(write.body)).toEqual({
+      items: [
+        {
+          product_id: 4004,
+          quantity: expect.any(Number),
+          size: null,
+        },
+      ],
+    });
+  }
 });
 
 test("corrupt storage and denied read/write retain usable in-memory Add, form and removal", async ({
@@ -2226,7 +2244,7 @@ test("corrupt storage and denied read/write retain usable in-memory Add, form an
   await expect(page.locator(".basket-panel output")).toHaveText("2");
   await page.locator(".guest-continue").click();
   await page.getByLabel("Имя", { exact: true }).fill("Memory");
-  await page.getByLabel("Контактный телефон").fill("1");
+  await page.getByLabel("Контактный телефон").fill("901234567");
   await page.getByLabel("Адрес доставки").fill("Memory address");
   await page
     .getByRole("button", { name: "Проверить данные", exact: true })

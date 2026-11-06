@@ -11,6 +11,8 @@ import GuestDetails, {
   type DeliveryDetails,
 } from "./GuestDetails";
 import { selectionAvailable, type BasketEntry } from "./guestBasket";
+import Checkout, { checkoutCopy } from "./Checkout";
+import type { Order } from "./guest";
 
 export const basketCopy = {
   ru: {
@@ -23,7 +25,7 @@ export const basketCopy = {
     remove: "Убрать",
     empty: "В корзине пока пусто",
     emptyNote: "Добавьте понравившийся товар из каталога.",
-    note: "Корзина сохраняется в этом браузере. Можно заполнить данные доставки без аккаунта. Заказ и оплата пока недоступны.",
+    note: "Корзина сохраняется в этом браузере. Заказ можно оформить без аккаунта.",
     prices:
       "Предварительная стоимость по каталогу. Товары не резервируются; цена и наличие могут измениться. Доставка оплачивается отдельно.",
     total: "По каталогу, предварительно",
@@ -42,7 +44,7 @@ export const basketCopy = {
     remove: "Olib tashlash",
     empty: "Savat hozircha boʻsh",
     emptyNote: "Katalogdan yoqqan mahsulotni qoʻshing.",
-    note: "Savat shu brauzerda saqlanadi. Yetkazib berish maʼlumotlarini akkauntsiz kiritish mumkin. Buyurtma va toʻlov hali mavjud emas.",
+    note: "Savat shu brauzerda saqlanadi. Buyurtmani akkauntsiz berish mumkin.",
     prices:
       "Katalog boʻyicha taxminiy narx. Mahsulotlar band qilinmaydi; narx va mavjudlik oʻzgarishi mumkin. Yetkazib berish alohida toʻlanadi.",
     total: "Katalog boʻyicha taxminan",
@@ -178,8 +180,6 @@ const flowCopy = {
     continue: "Данные доставки",
     review: "Проверьте данные",
     back: "Назад к данным",
-    noOrder: "Заказ ещё не создан. Отправка заказа и оплата пока недоступны.",
-    pay: "Оплата недоступна",
     check: "Сначала проверьте все товары в корзине.",
   },
   uz: {
@@ -197,9 +197,6 @@ const flowCopy = {
     continue: "Yetkazib berish maʼlumotlari",
     review: "Maʼlumotlarni tekshiring",
     back: "Maʼlumotlarga qaytish",
-    noOrder:
-      "Buyurtma hali yaratilmagan. Buyurtmani yuborish va toʻlov hozircha mavjud emas.",
-    pay: "Toʻlov mavjud emas",
     check: "Avval savatdagi barcha mahsulotlarni tekshiring.",
   },
 };
@@ -214,6 +211,7 @@ export default function Basket({
   dialogRef,
   onClose,
   onKeyDown,
+  onCreated,
 }: {
   lang: Language;
   entries: BasketEntry[];
@@ -225,10 +223,12 @@ export default function Basket({
   dialogRef: RefObject<HTMLDialogElement | null>;
   onClose: () => void;
   onKeyDown: KeyboardEventHandler<HTMLDialogElement>;
+  onCreated: (order: Order) => void;
 }) {
   const t = basketCopy[lang],
     f = flowCopy[lang],
-    d = detailsCopy[lang];
+    d = detailsCopy[lang],
+    c = checkoutCopy[lang];
   const [stage, setStage] = useState<"basket" | "form" | "review">("basket");
   const [draft, setDraft] = useState<DeliveryDetails>({
     name: "",
@@ -236,6 +236,8 @@ export default function Basket({
     address: "",
   });
   const [reviewRevision, setReviewRevision] = useState<number | null>(null);
+  // Products the Shop refused at review; marked until the buyer continues again.
+  const [marked, setMarked] = useState<number[]>([]);
   const heading = useRef<HTMLHeadingElement>(null);
   const available =
     entries.length > 0 &&
@@ -333,17 +335,41 @@ export default function Basket({
             }}
           />
         </>
+      ) : currentStage === "review" ? (
+        <>
+          <dl className="guest-review">
+            <dt>{d.name}</dt>
+            <dd>{draft.name}</dd>
+            <dt>{d.phone}</dt>
+            <dd>{draft.phone}</dd>
+            <dt>{d.address}</dt>
+            <dd>{draft.address}</dd>
+          </dl>
+          <Checkout
+            lang={lang}
+            entries={entries}
+            details={draft}
+            sizeLabel={t.size}
+            backLabel={f.back}
+            onBack={() => {
+              setReviewRevision(null);
+              setStage("form");
+            }}
+            onUnavailable={(ids) => {
+              setMarked(ids);
+              setReviewRevision(null);
+              setStage("basket");
+            }}
+            onOpenOrder={onClose}
+            onCreated={onCreated}
+          />
+        </>
       ) : (
         <>
-          {currentStage === "review" && (
-            <dl className="guest-review">
-              <dt>{d.name}</dt>
-              <dd>{draft.name}</dd>
-              <dt>{d.phone}</dt>
-              <dd>{draft.phone}</dd>
-              <dt>{d.address}</dt>
-              <dd>{draft.address}</dd>
-            </dl>
+          {marked.length > 0 && (
+            <p className="basket-notice" role="status">
+              {c.itemsUnavailable}
+            </p>
           )}
           {entries.length === 0 ? (
             <div className="empty-state">
@@ -390,46 +416,38 @@ export default function Basket({
                             {quantity}
                           </p>
                         )}
-                        {reason && (
+                        {(reason || marked.includes(id)) && (
                           <p className="basket-notice" role="status">
-                            {reason}
+                            {reason || f.blocked}
                           </p>
                         )}
                       </div>
-                      {currentStage === "basket" ? (
-                        <>
-                          {p ? (
-                            <Quantity
-                              count={quantity}
-                              name={name}
-                              lang={lang}
-                              disabled={!!reason}
-                              onChange={(delta) => {
-                                if (quantity + delta <= 0) removeEntry(entry);
-                                else change(p, size, delta);
-                              }}
-                            />
-                          ) : (
-                            <span>
-                              {t.count}: {quantity}
-                            </span>
-                          )}
-                          <button
-                            className="basket-remove"
-                            aria-label={`${t.remove}: ${name}`}
-                            onClick={() => removeEntry(entry)}
-                          >
-                            {t.remove}
-                          </button>
-                          {(entry.status === "error" ||
-                            entry.status === "missing") && (
-                            <button onClick={() => retry(id)}>{f.retry}</button>
-                          )}
-                        </>
+                      {p ? (
+                        <Quantity
+                          count={quantity}
+                          name={name}
+                          lang={lang}
+                          disabled={!!reason}
+                          onChange={(delta) => {
+                            if (quantity + delta <= 0) removeEntry(entry);
+                            else change(p, size, delta);
+                          }}
+                        />
                       ) : (
-                        <p>
+                        <span>
                           {t.count}: {quantity}
-                        </p>
+                        </span>
+                      )}
+                      <button
+                        className="basket-remove"
+                        aria-label={`${t.remove}: ${name}`}
+                        onClick={() => removeEntry(entry)}
+                      >
+                        {t.remove}
+                      </button>
+                      {(entry.status === "error" ||
+                        entry.status === "missing") && (
+                        <button onClick={() => retry(id)}>{f.retry}</button>
                       )}
                       {p && (
                         <p className="basket-subtotal">
@@ -457,34 +475,16 @@ export default function Basket({
                 </div>
               )}
               <p className="basket-note">{t.prices}</p>
-              {currentStage === "basket" ? (
-                <button
-                  className="guest-continue"
-                  disabled={!available}
-                  onClick={() => setStage("form")}
-                >
-                  {f.continue}
-                </button>
-              ) : (
-                <>
-                  <p className="basket-notice" id="guest-payment-note">
-                    {f.noOrder}
-                  </p>
-                  <div className="guest-actions">
-                    <button
-                      onClick={() => {
-                        setReviewRevision(null);
-                        setStage("form");
-                      }}
-                    >
-                      {f.back}
-                    </button>
-                    <button disabled aria-describedby="guest-payment-note">
-                      {f.pay}
-                    </button>
-                  </div>
-                </>
-              )}
+              <button
+                className="guest-continue"
+                disabled={!available}
+                onClick={() => {
+                  setMarked([]);
+                  setStage("form");
+                }}
+              >
+                {f.continue}
+              </button>
             </>
           )}
         </>

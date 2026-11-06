@@ -1,5 +1,6 @@
 /** Synthetic HTTP boundary for CI UI tests; never evidence of Shop authentication. */
 import { randomBytes } from "node:crypto";
+import { guest } from "./guest.boundary.mjs";
 const contexts = new Map(),
   attempts = new Map(),
   sessions = new Map();
@@ -18,6 +19,8 @@ const set = (res, name, value) =>
   );
 export async function boundary(req, res) {
   const path = new URL(req.url, "https://localhost:4173").pathname;
+  if (path === "/api/v1/guest" || path.startsWith("/api/v1/guest/"))
+    return guest(req, res);
   const jar = cookies(req);
   let input = {};
   for await (const chunk of req) {

@@ -59,8 +59,8 @@ function variant(base: Record<string, unknown>, key: string, value: unknown) {
   return copy;
 }
 
-describe("guest response validators", () => {
-  it("accept the S2 shapes and reject missing, wrongly typed and wrong-format fields", () => {
+describe("guest response validators (WS-02, WS-05, WS-07, WS-08, WS-11, D-4)", () => {
+  it("accept the S2 shapes and reject missing, wrongly typed and wrong-format fields (WS-11)", () => {
     expect(quote(validQuote)).toBe(true);
     for (const [key, value] of [
       ["lines", undefined],
@@ -130,7 +130,7 @@ describe("guest response validators", () => {
     expect(replay({ state: "paid" })).toBe(false);
   });
 
-  it("accept only an absolute https payment address", () => {
+  it("accept only an absolute https payment address (WS-08, WS-11)", () => {
     expect(
       paymentUrl({ payment_url: "https://pay.example.test/i/1?x=2" }),
     ).toBe("https://pay.example.test/i/1?x=2");
@@ -146,7 +146,7 @@ describe("guest response validators", () => {
     expect(paymentUrl(null)).toBeNull();
   });
 
-  it("read refusal details only when the code and its fields are valid", () => {
+  it("read refusal details only when the code and its fields are valid (WS-02, WS-05, WS-07, WS-08, WS-11)", () => {
     const ids = new GuestError(409, "items_unavailable", 0, {
       error: "items_unavailable",
       product_ids: [4002, 4003],
@@ -182,8 +182,8 @@ describe("guest response validators", () => {
   });
 });
 
-describe("idempotency key lifecycle", () => {
-  it("keeps one 32-hex key per submission scope and changes it only for a new scope or reset", () => {
+describe("idempotency key lifecycle (WS-05)", () => {
+  it("keeps one 32-hex key per submission scope and changes it only for a new scope or reset (WS-05)", () => {
     const keys = keyHolder();
     const first = keys.key("basket-1|form-1|quote-1");
     expect(first).toMatch(/^[0-9a-f]{32}$/);
@@ -231,8 +231,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("order submission", () => {
-  it("resends an uncertain outcome once automatically with the same key, then waits for the buyer", async () => {
+describe("order submission (WS-02, WS-05, WS-11, D-4)", () => {
+  it("resends an uncertain outcome once automatically with the same key, then waits for the buyer (WS-05)", async () => {
     vi.useFakeTimers();
     for (const failure of [
       new TypeError("Failed to fetch"),
@@ -263,7 +263,7 @@ describe("order submission", () => {
     expect(calls).toHaveLength(1);
   });
 
-  it("sends the S2 request and returns the created order after a lost first answer", async () => {
+  it("sends the S2 request and returns the created order after a lost first answer (WS-05, WS-11)", async () => {
     vi.useFakeTimers();
     const calls = stubFetch(
       new TypeError("Failed to fetch"),
@@ -287,7 +287,7 @@ describe("order submission", () => {
     }
   });
 
-  it("confirms a replay through this browser's order and otherwise asks to place again", async () => {
+  it("confirms a replay through this browser's order and otherwise asks to place again (WS-05)", async () => {
     const replayed = json(200, {
       order_number: validOrder.order_number,
       state: "awaiting_payment",
@@ -311,7 +311,7 @@ describe("order submission", () => {
     }
   });
 
-  it("maps definitive refusals without resending", async () => {
+  it("maps definitive refusals without resending (WS-02, WS-05, D-4)", async () => {
     const cases: [Response, unknown][] = [
       [
         json(409, { error: "quote_changed", quote: validQuote }),
@@ -358,8 +358,8 @@ describe("order submission", () => {
   });
 });
 
-describe("status and payment requests", () => {
-  it("send the CSRF header and language, and refuse a non-https payment address", async () => {
+describe("status and payment requests (WS-04, WS-07, WS-08, WS-11)", () => {
+  it("send the CSRF header and language, and refuse a non-https payment address (WS-07, WS-08, WS-11)", async () => {
     let calls = stubFetch(
       json(200, { payment_url: "https://pay.example.test/1" }),
     );
@@ -384,8 +384,8 @@ describe("status and payment requests", () => {
   });
 });
 
-describe("order view address", () => {
-  it("routes #order and converts the payment return query", () => {
+describe("order view address (WS-01)", () => {
+  it("routes #order and converts the payment return query (WS-01)", () => {
     expect(parseLocation("#order?lang=uz")).toEqual({
       view: "order",
       lang: "uz",

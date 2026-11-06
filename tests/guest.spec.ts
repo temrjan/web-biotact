@@ -3,7 +3,8 @@ import { fixture } from "./catalogue.fixture";
 import { BASKET_STORAGE_KEY } from "../src/guestBasket";
 
 /**
- * Website guest checkout (G1 spec S2 WS-01…WS-10) against the synthetic guest boundary
+ * Website guest checkout (G1 spec S2 WS-01, WS-02, WS-03, WS-04, WS-05, WS-06, WS-07, WS-08,
+ * WS-09, WS-10, WS-11, U-5, D-1, D-3, D-4, G1C-CARRY-O1) against the synthetic guest boundary
  * `tests/guest.boundary.mjs`. It proves the website side of CK-19 only; the paired run against
  * the real Shop API is separate.
  */
@@ -122,12 +123,18 @@ async function noOverflow(page: Page) {
   ).toBe(true);
 }
 
-test("RU wide: server quote, required terms, order view, one payment start, signed return and paid basket cleanup", async ({
+test("RU wide (WS-01, WS-02, WS-03, WS-04, WS-05, WS-07, WS-08, WS-09, WS-11): server quote, required terms, order view, one payment start, signed return and paid basket cleanup", async ({
   page,
 }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  const consoleMessages: string[] = [];
-  page.on("console", (m) => consoleMessages.push(m.text()));
+  const consoleMessages: Promise<string>[] = [];
+  page.on("console", (m) =>
+    consoleMessages.push(
+      Promise.all(
+        m.args().map((a) => a.jsonValue().catch(() => undefined)),
+      ).then((args) => `${m.text()} ${JSON.stringify(args)}`),
+    ),
+  );
   await start(page, "ru", [
     { product_id: 4004, size: null, quantity: 2 },
     { product_id: 4001, size: "L", quantity: 1 },
@@ -237,19 +244,14 @@ test("RU wide: server quote, required terms, order view, one payment start, sign
   expect(body?.quote_fingerprint).toMatch(/^[0-9a-f]{64}$/);
   await page.screenshot({ path: testInfo.outputPath("ru-1440-order.png") });
 
-  // A line added after the order is not part of it and must survive the paid cleanup.
-  await page.goto("/#catalogue?lang=ru");
-  await page.locator('[data-product-id="4006"] .add').click();
-  expect(await badge(page)).toBe("4");
-  await page.goto("/#order?lang=ru");
-  await expect(page.locator(".order-state")).toHaveText("Ожидает оплаты");
-
-  // A double press starts payment once; the token is the latest one the server issued.
+  // WS-08: a double press starts payment once; the token is the latest status response token, not initial.
   const pay = page.locator(".order-pay");
   await expect(pay).toHaveText(
     `Оплатить ${await shown(page, "338765.43", "ru")}`,
   );
   await expect(pay).toBeEnabled();
+  expect(tokens.length).toBeGreaterThanOrEqual(2);
+  expect(tokens.at(-1)).not.toBe(tokens[0]);
   await pay.evaluate((button: HTMLButtonElement) => {
     button.click();
     button.click();
@@ -264,8 +266,15 @@ test("RU wide: server quote, required terms, order view, one payment start, sign
     invoices: 1,
     messages: 1,
   });
+  const payPageUrl = page.url();
 
-  // Signed success callback, then the provider returns the buyer to /?view=order&lang=ru.
+  // WS-09: a line added after the order is not part of it and must survive the paid cleanup.
+  await page.goto("/#catalogue?lang=ru");
+  await page.locator('[data-product-id="4006"] .add').click();
+  expect(await badge(page)).toBe("4");
+  await page.goto(payPageUrl);
+
+  // WS-01, WS-07, WS-09: signed success callback, then the provider returns the buyer to /?view=order&lang=ru.
   await page.locator("#pay").click();
   await page.waitForURL(/\/#order\?lang=ru$/);
   await expect(page.locator(".order-state")).toHaveText(
@@ -294,8 +303,14 @@ test("RU wide: server quote, required terms, order view, one payment start, sign
     buyer.phone,
   ])
     expect(stored).not.toContain(secret);
-  const logged = consoleMessages.join("\n");
-  for (const secret of [created?.key ?? "-", ...tokens, "Guest-Private"])
+  const logged = (await Promise.all(consoleMessages)).join("\n");
+  for (const secret of [
+    created?.number ?? "-",
+    created?.key ?? "-",
+    ...tokens,
+    "Guest-Private",
+    buyer.phone,
+  ])
     expect(logged).not.toContain(secret);
   // Reopening the paid order repeats the removal without touching other lines.
   await page.reload();
@@ -304,9 +319,19 @@ test("RU wide: server quote, required terms, order view, one payment start, sign
   );
   expect(await badge(page)).toBe("1");
   await page.screenshot({ path: testInfo.outputPath("ru-1440-paid.png") });
+
+  // WS-04: when this device's order is already paid, opening review does not show the unpaid-order notice.
+  const paidOrderRead = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === "/api/v1/guest/order" &&
+      r.request().method() === "GET",
+  );
+  await toReview(page, "ru");
+  await paidOrderRead;
+  await expect(page.locator(".guest-unpaid")).toHaveCount(0);
 });
 
-test("UZ phone: changed quote needs a new press and key; return without callback stays awaiting until Check status reads paid", async ({
+test("UZ phone (WS-01, WS-02, WS-03, WS-05, WS-07, WS-08, WS-09): changed quote needs a new press and key; return without callback stays awaiting until Check status reads paid", async ({
   page,
 }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -406,7 +431,7 @@ test("UZ phone: changed quote needs a new press and key; return without callback
   });
 });
 
-test("review refusals: unavailable items return to the basket marked; too large, rate-limited and disabled show their texts without orders", async ({
+test("review refusals (WS-02, WS-05, D-4): unavailable items return to the basket marked; too large, rate-limited and disabled show their texts without orders", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -467,14 +492,30 @@ test("review refusals: unavailable items return to the basket marked; too large,
     .getByRole("button", { name: "Повторить" })
     .click();
   await expect(page.locator(".guest-checkout .basket-row")).toHaveCount(1);
+
+  // WS-02, WS-05: an item becoming unavailable after quote and before create returns to the basket and marks the line.
+  await control(page, "product?id=4004&available=0");
+  await place(page, "ru");
+  await expect(page.locator(".guest-continue")).toBeVisible();
+  await expect(page.locator(".basket-panel")).toContainText(
+    "Некоторые товары больше недоступны. Проверьте корзину.",
+  );
+  await expect(rows).toHaveCount(1);
+  await expect(rows.nth(0)).toContainText("Товар недоступен для покупки.");
+  expect((await server(page)).orders).toHaveLength(0);
+  expect(creates(seen)).toHaveLength(4);
 });
 
-test("uncertain creation is resent once with the same key: lost request, lost response, cut-off response and a manual retry", async ({
+test("uncertain creation (WS-04, WS-05, U-5, G1C-CARRY-O1) is resent once with the same key: lost request, lost response, cut-off response and a manual retry", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await start(page, "ru", [{ product_id: 4004, size: null, quantity: 1 }]);
   const seen = track(page);
+  const back = page.getByRole("button", {
+    name: "Назад к данным",
+    exact: true,
+  });
 
   // 1. The request never reaches the server; the automatic resend creates the order.
   let lose = 1;
@@ -487,6 +528,8 @@ test("uncertain creation is resent once with the same key: lost request, lost re
   await expect(page.locator(".guest-checkout")).toContainText(
     "Проверяем результат…",
   );
+  // U-5: Back is disabled during the checking phase as well as pending.
+  await expect(back).toBeDisabled();
   await expect(page).toHaveURL(/\/#order\?lang=ru$/);
   let keys = creates(seen).map((b) => b.idempotency_key);
   expect(keys).toHaveLength(2);
@@ -495,16 +538,20 @@ test("uncertain creation is resent once with the same key: lost request, lost re
   expect(state.orders).toHaveLength(1);
   const first = state.orders[0]?.number ?? "";
 
-  // WS-04: an unpaid order on this device is announced at review without blocking.
+  // WS-04, G1C-CARRY-O1: an unpaid order on this device is announced at review without blocking,
+  // and clicking "Открыть заказ" while already on #order closes the basket dialog and reveals #order.
   await toReview(page, "ru");
   const notice = page.locator(".guest-unpaid");
   await expect(notice).toContainText(
     `На этом устройстве есть неоплаченный заказ № ${first}. Новый заказ заменит его здесь, а неоплаченный заказ отменится автоматически.`,
   );
-  await expect(
-    notice.getByRole("link", { name: "Открыть заказ" }),
-  ).toHaveAttribute("href", "/#order?lang=ru");
+  const openOrder = notice.getByRole("link", { name: "Открыть заказ" });
+  await expect(openOrder).toHaveAttribute("href", "/#order?lang=ru");
   await expect(page.locator(".guest-place")).toBeEnabled();
+  await openOrder.click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await expect(page.locator("#order-title")).toHaveText(`Заказ № ${first}`);
+  await toReview(page, "ru");
 
   // 2. The response is held and then lost (503 without its cookie) after the order exists:
   // the same-key resend is replayed, but this browser holds another order, so the buyer is
@@ -516,10 +563,6 @@ test("uncertain creation is resent once with the same key: lost request, lost re
     .toEqual({ held: true });
   await expect(page.locator(".guest-place")).toBeDisabled();
   // The buyer cannot leave the review while the order request is pending (Captain decision U-5).
-  const back = page.getByRole("button", {
-    name: "Назад к данным",
-    exact: true,
-  });
   await expect(back).toBeDisabled();
   await page.request.get("/__test/drop");
   await expect(page.locator(".guest-checkout [role=alert]")).toHaveText(
@@ -572,10 +615,17 @@ test("uncertain creation is resent once with the same key: lost request, lost re
   );
   await expect(page.locator(".guest-place")).toBeDisabled();
   expect(creates(seen)).toHaveLength(9);
+  await page.request.get("/__test/hold?kind=guest-order");
   await page
     .locator(".guest-checkout [role=alert]")
     .getByRole("button", { name: "Повторить" })
     .click();
+  await expect
+    .poll(async () => (await page.request.get("/__test/held")).json())
+    .toEqual({ held: true });
+  // U-5: Back is also disabled while a manual retry ("checking" phase) is in flight.
+  await expect(back).toBeDisabled();
+  await page.request.get("/__test/release");
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   keys = creates(seen).map((b) => b.idempotency_key);
   expect(keys).toHaveLength(10);
@@ -583,7 +633,7 @@ test("uncertain creation is resent once with the same key: lost request, lost re
   expect((await server(page)).orders).toHaveLength(5);
 });
 
-test("payment start failures keep the order usable; 403 re-reads the token; only https addresses open; closed and missing orders show their texts", async ({
+test("payment start failures (WS-04, WS-07, WS-08, WS-09, WS-11, D-4) keep the order usable; 403 re-reads the token; only https addresses open; closed and missing orders show their texts", async ({
   page,
   context,
 }) => {
@@ -591,7 +641,30 @@ test("payment start failures keep the order usable; 403 re-reads the token; only
   await start(page, "ru", [{ product_id: 4004, size: null, quantity: 1 }]);
   const seen = track(page);
   await toReview(page, "ru");
+  // WS-07, D-4: 404 guest_checkout_disabled on status read clears the initial order and shows the disabled refusal text.
+  await control(
+    page,
+    "fault?route=order&status=404&error=guest_checkout_disabled",
+  );
   await place(page, "ru");
+  await expect(page.locator("#order-title")).toHaveText("Заказ");
+  await expect(page.locator(".order-state")).toHaveCount(0);
+  await expect(page.locator(".order-view [role=alert]")).toContainText(
+    "Оформление заказа на сайте временно недоступно.",
+  );
+  await page.getByRole("button", { name: "Повторить" }).click();
+  await expect(page.locator(".order-state")).toHaveText("Ожидает оплаты");
+
+  // WS-11, U-4: leaving #order clears the in-memory creation response so returning on a failed read does not show stale data.
+  await page.goto("/#catalogue?lang=ru");
+  await control(page, "fault?route=order&status=503&error=service_unavailable");
+  await page.goto("/#order?lang=ru");
+  await expect(page.locator("#order-title")).toHaveText("Заказ");
+  await expect(page.locator(".order-state")).toHaveCount(0);
+  await expect(page.locator(".order-view [role=alert]")).toContainText(
+    "Не удалось выполнить запрос. Повторите попытку.",
+  );
+  await page.getByRole("button", { name: "Повторить" }).click();
   await expect(page.locator(".order-state")).toHaveText("Ожидает оплаты");
   const pay = page.locator(".order-pay");
   const notice = page.locator(".order-view .basket-notice");
@@ -660,6 +733,18 @@ test("payment start failures keep the order usable; 403 re-reads the token; only
   await page.getByRole("button", { name: "Повторить" }).click();
   await expect(page.locator(".order-state")).toHaveText("Ожидает оплаты");
 
+  // WS-08: 404 order_not_found on payment start clears the order and shows the not-found text.
+  await control(page, "fault?route=payment&status=404&error=order_not_found");
+  await pay.click();
+  await expect(page.locator("#order-title")).toHaveText("Заказ");
+  await expect(page.locator(".order-view [role=alert]")).toHaveText(
+    "Заказ не найден на этом устройстве. Если вы оплатили заказ, мы свяжемся с вами по указанному телефону.",
+  );
+  await expect(pay).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator(".order-state")).toHaveText("Ожидает оплаты");
+  await expect(pay).toBeEnabled();
+
   // The server cancelled the order meanwhile: Pay re-renders the closed state.
   const [order] = (await server(page)).orders;
   await control(page, `cancel?invoice=${order?.number}`);
@@ -672,6 +757,18 @@ test("payment start failures keep the order usable; 403 re-reads the token; only
   ).toHaveAttribute("href", "/#catalogue?page=1&lang=ru");
   await expect(pay).toHaveCount(0);
   expect(await badge(page)).toBe("1");
+
+  // WS-04: when this device's order is cancelled, opening review does not show the unpaid-order notice.
+  const cancelledOrderRead = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === "/api/v1/guest/order" &&
+      r.request().method() === "GET",
+  );
+  await toReview(page, "ru");
+  await cancelledOrderRead;
+  await expect(page.locator(".guest-unpaid")).toHaveCount(0);
+  await page.locator(".basket-panel .close-control").click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
 
   // Without the purchase cookie the order is not found on this device.
   await context.clearCookies();

@@ -193,6 +193,7 @@ export default function Checkout({
   backLabel,
   onBack,
   onUnavailable,
+  onOpenOrder,
   onCreated,
 }: {
   lang: Language;
@@ -202,6 +203,7 @@ export default function Checkout({
   backLabel: string;
   onBack: () => void;
   onUnavailable: (ids: number[]) => void;
+  onOpenOrder?: () => void;
   onCreated: (order: Order) => void;
 }) {
   const c = checkoutCopy[lang];
@@ -340,7 +342,12 @@ export default function Checkout({
       {unpaid && (
         <p className="basket-notice guest-unpaid" role="status">
           {c.unpaid(unpaid)}{" "}
-          <a href={href({ view: "order", lang, page: 1 })}>{c.openOrder}</a>
+          <a
+            href={href({ view: "order", lang, page: 1 })}
+            onClick={onOpenOrder}
+          >
+            {c.openOrder}
+          </a>
         </p>
       )}
       {read.status === "loading" && <p role="status">{c.quoteLoading}</p>}

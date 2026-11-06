@@ -2023,6 +2023,7 @@ test("remembered exact variants survive reload, a new page and optional unavaila
   }
 });
 
+// Class-1 guest checkout boundaries (WS-02, WS-03, WS-06, WS-11, D-1, D-3).
 test("guest validation, server review, unaccepted terms, draft lifetime and privacy cross the actual browser request and storage boundaries", async ({
   page,
 }, testInfo) => {

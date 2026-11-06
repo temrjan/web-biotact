@@ -91,7 +91,7 @@ function projection(o, secret) {
     })),
     total: o.total,
     currency: "UZS",
-    csrf_token: keyed("guest-csrf", secret),
+    csrf_token: keyed("guest-csrf", `${secret}:${o.reads}`),
   };
 }
 function validItems(items) {
@@ -300,6 +300,7 @@ export async function guest(req, res) {
       contact,
       status: "pending",
       payment: "unpaid",
+      reads: 0,
       checkout: null,
       back: null,
     };
@@ -323,9 +324,9 @@ export async function guest(req, res) {
     if (injected(res, "order")) return;
     const secret = cookie(req),
       o = find(secret);
-    return o
-      ? reply(res, 200, projection(o, secret))
-      : fail(res, 404, "order_not_found");
+    if (!o) return fail(res, 404, "order_not_found");
+    o.reads++;
+    return reply(res, 200, projection(o, secret));
   }
   if (post && path === "/order/payment") {
     counters.payment++;
@@ -334,12 +335,14 @@ export async function guest(req, res) {
     const secret = cookie(req);
     if (typeof secret !== "string" || !/^[0-9a-f]{64}$/.test(secret))
       return fail(res, 404, "order_not_found");
-    const expected = Buffer.from(keyed("guest-csrf", secret)),
+    const o = find(secret);
+    const expected = Buffer.from(
+        keyed("guest-csrf", o ? `${secret}:${o.reads}` : secret),
+      ),
       given = Buffer.from(String(req.headers["x-csrf-token"] || ""));
     if (given.length !== expected.length || !timingSafeEqual(given, expected))
       return fail(res, 403, "request_forbidden");
     if (injected(res, "payment")) return;
-    const o = find(secret);
     if (!o) return fail(res, 404, "order_not_found");
     if (state(o) !== "awaiting_payment")
       return fail(res, 409, "order_not_payable", { state: state(o) });

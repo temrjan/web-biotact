@@ -360,6 +360,7 @@ export default function Basket({
               setReviewRevision(null);
               setStage("basket");
             }}
+            onOpenOrder={onClose}
             onCreated={onCreated}
           />
         </>

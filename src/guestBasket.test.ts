@@ -71,7 +71,7 @@ test("a resolved product never substitutes a removed, missing or obsolete size",
   expect(selectionAvailable({ ...p, requires_size: false }, "L")).toBe(false);
   expect(selectionAvailable({ ...p, is_in_stock: false }, "L")).toBe(false);
 });
-test("delivery validation equals the guest order limits: trimmed name 1-100 and address 1-300 code points, phone syntax with 9-15 digits in at most 20 characters", () => {
+test("delivery validation equals the guest order limits: trimmed name 1-100 and address 1-300 code points, phone syntax with 9-15 digits in at most 20 characters (WS-06, D-1)", () => {
   const value = {
     name: " 李 / Ой ",
     phone: " +998 (90) 123-45.67 ",
@@ -139,7 +139,7 @@ test("delivery validation equals the guest order limits: trimmed name 1-100 and 
     "Telefonni kiriting: 9 tadan 15 tagacha raqam. Boʻshliq, qavs, chiziqcha, nuqta va boshida plyus mumkin.",
   );
 });
-test("a paid order removes exactly its product and size lines, keeps others and repeats without change", () => {
+test("a paid order removes exactly its product and size lines, keeps others and repeats without change (WS-09)", () => {
   const items = [
     { product_id: 4004, size: null, quantity: 2 },
     { product_id: 4001, size: "L", quantity: 1 },

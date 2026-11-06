@@ -46,9 +46,11 @@ const child = fixture
       [
         resolve(
           root,
-          process.env.CONSULTANT_BROWSER_FIXTURE === "1"
-            ? "tests/consultant_browser_server.py"
-            : "tests/tg1_browser_server.py",
+          process.env.G1_BROWSER_FIXTURE === "1"
+            ? "tests/g1_browser_server.py"
+            : process.env.CONSULTANT_BROWSER_FIXTURE === "1"
+              ? "tests/consultant_browser_server.py"
+              : "tests/tg1_browser_server.py",
         ),
       ],
       {
@@ -116,13 +118,19 @@ const server = createServer(
       return;
     }
     if (url.pathname === "/__test/ready") {
+      const guest = process.env.G1_BROWSER_FIXTURE === "1";
       const upstream = http.get(
-        "http://127.0.0.1:8089/api/v1/buyer/auth/session",
+        guest
+          ? "http://127.0.0.1:8089/api/v1/guest/order"
+          : "http://127.0.0.1:8089/api/v1/buyer/auth/session",
         (r) => {
-          res.statusCode =
-            r.statusCode === 401 ||
-            (process.env.CONSULTANT_BROWSER_FIXTURE === "1" &&
-              [404, 503].includes(r.statusCode))
+          res.statusCode = guest
+            ? r.statusCode === 404
+              ? 200
+              : 503
+            : r.statusCode === 401 ||
+                (process.env.CONSULTANT_BROWSER_FIXTURE === "1" &&
+                  [404, 503].includes(r.statusCode))
               ? 200
               : 503;
           r.pipe(res);

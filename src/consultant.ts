@@ -257,3 +257,16 @@ export function sensitive(value: string): boolean {
     value,
   );
 }
+/**
+ * A source passage for display: the layout marks of the PDF text (■ and other filled
+ * squares, • bullets, box-drawing rules such as ────) are removed, each line is trimmed
+ * and empty lines collapse. The words, numbers and line order stay as supplied.
+ */
+export function plainPassage(text: string): string {
+  return text
+    .replace(/[■-▫•─-╿]/g, "")
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n");
+}

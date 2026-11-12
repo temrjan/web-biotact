@@ -1823,6 +1823,7 @@ test("Home sections: sale, Mini App category rows, lazy video, FAQ accordion, co
   // Bottom row: copyright on the left, developer credit on the right.
   const bottom = footer.locator(".footer-bottom > p");
   const year = new Date().getFullYear();
+  await expect(footer.locator("#footer-uz")).toHaveText('ООО "Biotact"');
   await expect(bottom).toHaveText([
     `© ${year} ООО "Biotact"`,
     "Разработка сайта — temrjan.com",
@@ -1885,10 +1886,13 @@ test("Home sections: sale, Mini App category rows, lazy video, FAQ accordion, co
     "Nutriyentlar API",
   );
   await expect(page.locator(".page-footer")).toContainText("Toshkent shahri");
+  // The Uzbek page names the company in its Uzbek legal form (Captain C-101).
+  await expect(page.locator("#footer-uz")).toHaveText('"Biotact" MChJ');
   await expect(page.locator(".footer-bottom > p")).toHaveText([
-    `© ${year} ООО "Biotact"`,
+    `© ${year} "Biotact" MChJ`,
     "Sayt ishlab chiqilgan: temrjan.com",
   ]);
+  await expect(page.locator(".page-footer")).not.toContainText("ООО");
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/#home?lang=uz");

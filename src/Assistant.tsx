@@ -191,7 +191,12 @@ export default function Assistant({
     }
     setPending(false);
   }
-  function reset(preserveDraft = false) {
+  /** A conversation exists that a reset would drop. */
+  function hasContext() {
+    return entries.length > 0 || token.current !== null || run.current !== null;
+  }
+  /** «Контекст сброшен» is said only when a conversation was dropped (task 4). */
+  function reset(preserveDraft = false, announce = true) {
     cancel();
     for (const controller of refreshes.current) controller.abort();
     token.current = null;
@@ -199,7 +204,7 @@ export default function Assistant({
     setEntries([]);
     setCards([]);
     if (!preserveDraft) setDraft("");
-    setNotice(t.cleared);
+    setNotice(announce ? t.cleared : "");
     touched.current = Date.now();
   }
   useEffect(() => {
@@ -233,7 +238,8 @@ export default function Assistant({
   }, [active]);
   useEffect(() => {
     const interval = window.setInterval(() => {
-      if (Date.now() - touched.current >= 30 * 60 * 1000) reset();
+      if (Date.now() - touched.current >= 30 * 60 * 1000)
+        reset(false, hasContext());
     }, 1000);
     return () => window.clearInterval(interval);
   });
@@ -287,7 +293,7 @@ export default function Assistant({
       setNotice(t.sensitive);
       return;
     }
-    if (Date.now() - touched.current >= 30 * 60 * 1000) {
+    if (Date.now() - touched.current >= 30 * 60 * 1000 && hasContext()) {
       reset(true);
       return;
     }

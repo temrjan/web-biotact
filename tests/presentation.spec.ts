@@ -4096,8 +4096,12 @@ test("consultant says the context was reset only after «Начать занов
   page,
 }) => {
   await fixture(page);
+  await page.clock.install();
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/#home?lang=ru");
+  // Half an hour on the page without a conversation is no reset to announce
+  // (task 4 review r1, OPT-01).
+  await page.clock.runFor(30 * 60 * 1000 + 2000);
   await page.locator(".sidebar .ai-nav").click();
   const panel = page.locator(".assistant-panel");
   await expect(panel.locator(".close-control")).toBeFocused();

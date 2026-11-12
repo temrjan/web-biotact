@@ -1891,10 +1891,11 @@ test("Home sections: sale, Mini App category rows, lazy video, FAQ accordion, co
     "Nutriyentlar API",
   );
   await expect(page.locator(".page-footer")).toContainText("Toshkent shahri");
-  // The Uzbek page names the company in its Uzbek legal form (Captain C-101).
-  await expect(page.locator("#footer-uz")).toHaveText('"Biotact" MChJ');
+  // The Uzbek page names the company in its Uzbek legal form, spelled as the
+  // Captain's reference (C-101, typographic quotes).
+  await expect(page.locator("#footer-uz")).toHaveText("“Biotact” MChJ");
   await expect(page.locator(".footer-bottom > p")).toHaveText([
-    `© ${year} "Biotact" MChJ`,
+    `© ${year} “Biotact” MChJ`,
     "Sayt ishlab chiqilgan: temrjan.com",
   ]);
   await expect(page.locator(".page-footer")).not.toContainText("ООО");

@@ -106,7 +106,7 @@ const copy = {
     ],
     contacts: "Kontaktlar",
     credit: "Sayt ishlab chiqilgan:",
-    company: '"Biotact" MChJ',
+    company: "“Biotact” MChJ",
   },
 };
 

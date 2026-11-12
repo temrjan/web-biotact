@@ -146,7 +146,7 @@ export default function Assistant({
   // The customer message of the request in flight, shown as the pending entry (CH-01).
   const [asked, setAsked] = useState<string | null>(null);
   const [busyCards, setBusyCards] = useState<number[]>([]);
-  const [notice, setNotice] = useState(t.cleared);
+  const [notice, setNotice] = useState("");
   const tab = useRef(crypto.randomUUID());
   const revision = useRef(0);
   const token = useRef<string | null>(null);

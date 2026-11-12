@@ -36,7 +36,8 @@ const copy = {
     progress: "Готовлю ответ…",
     sources: "Источники",
     data: "Обработка данных",
-    hint: "Не пишите в вопросе личные данные. Подробнее — в «Обработка данных».",
+    hint: "Не пишите в вопросе личные данные. Enter — отправить.",
+    fromInstruction: "Из инструкции",
     abilities:
       "Помогу выбрать товар, расскажу о составе, способе приёма и цене. Например:",
     examples: [
@@ -57,8 +58,7 @@ const copy = {
     changed:
       "Цена или доступность изменились. Проверьте карточку и нажмите «В корзину» снова.",
     unavailable: "Сведения о товаре недоступны. Добавление остановлено.",
-    shop: "Цена и наличие: Shop, проверено",
-    shortcut: "Enter — отправить. Shift+Enter — новая строка.",
+    shop: (time: string) => `Цена и наличие актуальны на ${time}`,
     count: "Символов",
   },
   uz: {
@@ -75,7 +75,8 @@ const copy = {
     progress: "Javob tayyorlanmoqda…",
     sources: "Manbalar",
     data: "Maʼlumotlarni qayta ishlash",
-    hint: "Savolda shaxsiy maʼlumotlarni yozmang. Batafsil — «Maʼlumotlarni qayta ishlash» boʻlimida.",
+    hint: "Savolda shaxsiy maʼlumotlarni yozmang. Enter — yuborish.",
+    fromInstruction: "Yoʻriqnomadan",
     abilities:
       "Mahsulot tanlashga yordam beraman, tarkibi, qabul qilish usuli va narxi haqida aytib beraman. Masalan:",
     examples: [
@@ -96,8 +97,7 @@ const copy = {
     changed:
       "Narx yoki mavjudlik oʻzgardi. Kartani tekshirib, «Savatga» tugmasini yana bosing.",
     unavailable: "Mahsulot maʼlumotlari mavjud emas. Qoʻshish toʻxtatildi.",
-    shop: "Narx va mavjudlik: Shop, tekshirildi",
-    shortcut: "Enter — yuborish. Shift+Enter — yangi qator.",
+    shop: (time: string) => `Narx va mavjudlik ${time} holatiga koʻra`,
     count: "Belgilar",
   },
 };
@@ -160,6 +160,8 @@ export default function Assistant({
   const visible = useRef(active);
   visible.current = active;
   const progress = useRef<HTMLParagraphElement>(null);
+  // The message feed scrolls; the header and the form stay in place.
+  const feed = useRef<HTMLDivElement>(null);
   const latest = useRef<HTMLElement>(null);
   const cardList = useRef<HTMLDivElement>(null);
   // The progress line's box when the answer arrived; the layout effect places the new
@@ -238,7 +240,7 @@ export default function Assistant({
     return () => window.clearInterval(interval);
   });
   function panelBox(): Parameters<typeof reveal>[0] | null {
-    const panel = dialogRef.current;
+    const panel = feed.current;
     if (!panel) return null;
     return {
       top: panel.getBoundingClientRect().top + panel.clientTop,
@@ -251,10 +253,10 @@ export default function Assistant({
   useLayoutEffect(() => {
     const box = panelBox();
     const line = progress.current?.getBoundingClientRect();
-    if (asked === null || !box || !line || !dialogRef.current) return;
+    if (asked === null || !box || !line || !feed.current) return;
     const top = reveal(box, line);
-    if (top !== null) dialogRef.current.scrollTop = top;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new pending entry moves the panel
+    if (top !== null) feed.current.scrollTop = top;
+    // Only a new pending entry moves the feed.
   }, [asked]);
   // CH-04, CH-05: after the new entry is in the DOM and before the paint, a short answer
   // stays where it is and a long one is read from its question down. Scrolls are instant.
@@ -263,7 +265,7 @@ export default function Assistant({
     arrived.current = null;
     const box = panelBox();
     const entry = latest.current?.getBoundingClientRect();
-    if (!line || !box || !entry || !dialogRef.current) return;
+    if (!line || !box || !entry || !feed.current) return;
     const list = cardList.current?.getBoundingClientRect();
     const bottom =
       list && list.height > 0
@@ -272,8 +274,8 @@ export default function Assistant({
     // The entry's padding box: its question sits one top padding below it.
     const start = entry.top + (latest.current?.clientTop ?? 0);
     const top = afterAnswer(box, line, { top: start, bottom });
-    if (top !== null) dialogRef.current.scrollTop = top;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when an answer is added
+    if (top !== null) feed.current.scrollTop = top;
+    // Runs when an answer is added.
   }, [entries]);
 
   /** Sends the draft, or an example question exactly as if it were typed. */
@@ -470,6 +472,9 @@ export default function Assistant({
       <div className="ai-head">
         <div className="dialog-heading">
           <h2 id="assistant-title">{t.title}</h2>
+          <button type="button" className="ai-reset" onClick={() => reset()}>
+            {t.reset}
+          </button>
           <button
             className="close-control"
             data-initial-focus
@@ -485,34 +490,11 @@ export default function Assistant({
         <p className="ai-caption" id="assistant-preview">
           {t.scope}
         </p>
+        <p className="ai-context">
+          {t.context}: <strong>{context}</strong>
+        </p>
       </div>
-      <div className="ai-context">
-        {t.context}
-        <strong>{context}</strong>
-      </div>
-      <div className="ai-body">
-        <p className="ai-hint">{t.hint}</p>
-        <details className="ai-data">
-          <summary>{t.data}</summary>
-          <p>{t.privacy}</p>
-          <p>{t.retention}</p>
-          <p className="ai-links">
-            <a
-              href="https://developers.openai.com/api/docs/guides/your-data"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              OpenAI
-            </a>
-            <a
-              href="https://openrouter.ai/privacy"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              OpenRouter
-            </a>
-          </p>
-        </details>
+      <div className="ai-body" ref={feed}>
         {entries.length === 0 && (
           <div className="ai-examples">
             <p>{t.abilities}</p>
@@ -534,25 +516,28 @@ export default function Assistant({
             </div>
           </div>
         )}
-        <button onClick={() => reset()}>{t.reset}</button>
         {entries.map((entry, index) => (
           <section
             className="ai-answer"
             key={entry.response.request_id}
             ref={index === entries.length - 1 ? latest : undefined}
           >
-            <p>
-              <strong>{entry.question}</strong>
-            </p>
+            <p className="ai-question">{entry.question}</p>
             <p className="ai-plain">{entry.response.answer}</p>
-            {entry.response.cautions.map((id) => (
-              <p className="ai-caution ai-plain" key={id}>
-                {
-                  entry.response.sources.find((s) => s.source_id === id)
-                    ?.passage
-                }
-              </p>
-            ))}
+            {entry.response.cautions.length > 0 && (
+              // C-98: the instruction's cautions stay visible, apart from the answer.
+              <div className="ai-caution">
+                <p className="ai-caution-label">{t.fromInstruction}</p>
+                {entry.response.cautions.map((id) => (
+                  <p className="ai-plain" key={id}>
+                    {api.plainPassage(
+                      entry.response.sources.find((s) => s.source_id === id)
+                        ?.passage ?? "",
+                    )}
+                  </p>
+                ))}
+              </div>
+            )}
             {entry.response.sources.length > 0 && (
               <details>
                 <summary>{t.sources}</summary>
@@ -565,17 +550,21 @@ export default function Assistant({
                       {s.revision} · {s.section_title} · {s.pdf_title},{" "}
                       {s.pdf_page}
                     </p>
-                    <p className="ai-plain">{s.passage}</p>
+                    <p className="ai-plain">{api.plainPassage(s.passage)}</p>
                   </section>
                 ))}
               </details>
             )}
             {entry.response.commercial_checked_at && (
-              <p className="muted">
-                {t.shop}{" "}
-                {new Date(
-                  entry.response.commercial_checked_at,
-                ).toLocaleTimeString(lang)}
+              <p className="muted ai-checked">
+                {t.shop(
+                  new Date(
+                    entry.response.commercial_checked_at,
+                  ).toLocaleTimeString(lang, {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }),
+                )}
               </p>
             )}
           </section>
@@ -589,9 +578,7 @@ export default function Assistant({
         </div>
         {asked !== null && (
           <section className="ai-pending">
-            <p>
-              <strong>{asked}</strong>
-            </p>
+            <p className="ai-question">{asked}</p>
           </section>
         )}
         <p role="status" aria-live="polite" ref={progress}>
@@ -605,9 +592,13 @@ export default function Assistant({
           void submit();
         }}
       >
-        <label htmlFor="assistant-draft">{t.draft}</label>
+        <label className="visually-hidden" htmlFor="assistant-draft">
+          {t.draft}
+        </label>
         <textarea
           id="assistant-draft"
+          placeholder={t.draft}
+          rows={2}
           value={draft}
           maxLength={api.QUESTION_LIMIT}
           {...(showCount ? { "aria-describedby": "assistant-count" } : {})}
@@ -640,6 +631,7 @@ export default function Assistant({
             on it after a click; while disabled a click sends nothing (CH-09). */}
         <button
           type="submit"
+          className="ai-send"
           aria-disabled={sendOff || undefined}
           onClick={(e) => {
             if (sendOff) e.preventDefault();
@@ -652,9 +644,28 @@ export default function Assistant({
             {t.cancel}
           </button>
         )}
-        <p className="muted">
-          {t.sensitive} {t.shortcut}
-        </p>
+        <p className="muted ai-hint">{t.hint}</p>
+        <details className="ai-data">
+          <summary>{t.data}</summary>
+          <p>{t.privacy}</p>
+          <p>{t.retention}</p>
+          <p className="ai-links">
+            <a
+              href="https://developers.openai.com/api/docs/guides/your-data"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              OpenAI
+            </a>
+            <a
+              href="https://openrouter.ai/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              OpenRouter
+            </a>
+          </p>
+        </details>
       </form>
     </dialog>
   );

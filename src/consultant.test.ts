@@ -4,6 +4,7 @@ import {
   errorNotice,
   history,
   parseAnswer,
+  plainPassage,
   QUESTION_LIMIT,
   questionLength,
   type Turn,
@@ -111,5 +112,15 @@ describe("consultant response boundary", () => {
     expect(commercial(p)).toBe(
       commercial({ ...p, description: "New description" }),
     );
+  });
+});
+
+describe("plainPassage", () => {
+  it("drops the PDF layout marks and empty lines, keeps words, numbers and order", () => {
+    expect(
+      plainPassage(
+        "■ Способ применения\n────────────\n•  взрослым — 1 капсула в день;\n\n  • детям с 3 лет — 1 стик\n",
+      ),
+    ).toBe("Способ применения\nвзрослым — 1 капсула в день;\nдетям с 3 лет — 1 стик");
   });
 });

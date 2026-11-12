@@ -828,7 +828,8 @@ h3 {
   margin: 0;
   padding: 0;
   border-radius: var(--bt-radius-panel) 0 0 var(--bt-radius-panel);
-  overflow-y: auto;
+  /* Header and form stay; only the message feed (.ai-body) scrolls. */
+  overflow: hidden;
   z-index: var(--bt-layer-panel);
 }
 .assistant-panel[open] {
@@ -865,33 +866,73 @@ h3 {
   color: var(--bt-text);
 }
 .ai-head {
-  padding: 1.5rem 1.25rem 1rem;
+  padding: 0.75rem 1rem 0.75rem 1.25rem;
   flex-shrink: 0;
+  background: var(--bt-consultant-header);
+  color: var(--bt-consultant-header-text);
+}
+.ai-head .dialog-heading {
+  align-items: center;
+  gap: 0.5rem;
+}
+.ai-head h2 {
+  flex: 1;
+  font-size: 1.25rem;
+}
+.ai-head .close-control,
+.ai-head .ai-reset {
+  background: transparent;
+  box-shadow: none;
+  color: var(--bt-consultant-header-text);
+}
+.ai-head .ai-reset {
+  min-height: 2rem;
+  padding: 0.25rem 0.625rem;
+  border-color: var(--bt-consultant-header-caption);
+  font-size: 0.8125rem;
+}
+.ai-head .close-control {
+  border-color: transparent;
+}
+.ai-head .close-control:hover:enabled,
+.ai-head .ai-reset:hover:enabled {
+  background: var(--bt-action-hover);
+}
+.ai-head .close-control:active:enabled,
+.ai-head .ai-reset:active:enabled {
+  background: var(--bt-action-active);
+  box-shadow: none;
 }
 .ai-caption {
-  margin-top: 0.75rem;
-  font-size: 0.875rem;
-  color: var(--bt-text-muted);
+  margin-top: 0.25rem;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  color: var(--bt-consultant-header-caption);
 }
+/* The current page as a one-line chip. */
 .ai-context {
-  border: 1px solid var(--bt-border);
-  border-radius: var(--bt-radius-control);
-  margin: 0 1.25rem 1rem;
-  padding: 0.75rem;
-  background: var(--bt-surface-subtle);
-  box-shadow: var(--bt-shadow-inset);
-  font-size: 0.875rem;
-  color: var(--bt-text-muted);
-  flex-shrink: 0;
+  max-width: 100%;
+  width: fit-content;
+  margin-top: 0.5rem;
+  padding: 0.125rem 0.625rem;
+  border: 1px solid var(--bt-consultant-header-caption);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  color: var(--bt-consultant-header-caption);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ai-context strong {
-  display: block;
-  color: var(--bt-text);
-  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--bt-consultant-header-text);
 }
 .ai-body {
-  padding: 0 1.25rem 1.25rem;
-  flex: 1 0 auto;
+  padding: 1rem 1.25rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .ai-empty {
   min-height: 9rem;
@@ -920,18 +961,14 @@ h3 {
 }
 .ai-compose {
   border-top: 1px solid var(--bt-border);
-  padding: 1rem 1.25rem;
+  padding: 0.75rem 1.25rem;
   flex-shrink: 0;
-}
-.ai-compose label {
-  display: block;
-  font-size: 0.875rem;
-  margin-bottom: 0.5rem;
 }
 .ai-compose textarea {
   display: block;
   width: 100%;
-  min-height: 5rem;
+  min-height: 3.25rem;
+  max-height: 30dvh;
   resize: vertical;
   border: 1px solid var(--bt-border);
   border-radius: var(--bt-radius-control);
@@ -940,16 +977,27 @@ h3 {
   font-size: 0.9375rem;
 }
 .ai-compose button {
-  margin-top: 0.75rem;
+  margin-top: 0.5rem;
+}
+.ai-compose .ai-send {
+  background: var(--bt-action);
+  border-color: var(--bt-action);
+  color: var(--bt-text-inverse);
+}
+.ai-compose .ai-send:hover:enabled {
+  background: var(--bt-action-hover);
+}
+.ai-compose .ai-send:active:enabled {
+  background: var(--bt-action-active);
 }
 /* spec r7 CH-01: the disabled look of a Send button that keeps its focus. */
 .ai-compose button[aria-disabled="true"] {
   opacity: 0.6;
   cursor: default;
 }
-.ai-compose button[aria-disabled="true"]:hover,
-.ai-compose button[aria-disabled="true"]:active {
-  background: var(--bt-action-subtle);
+.ai-compose .ai-send[aria-disabled="true"]:hover,
+.ai-compose .ai-send[aria-disabled="true"]:active {
+  background: var(--bt-action);
   box-shadow: var(--bt-shadow-raised);
 }
 .ai-count {
@@ -959,9 +1007,22 @@ h3 {
   color: var(--bt-text-muted);
   font-variant-numeric: tabular-nums;
 }
-.ai-compose .muted {
-  font-size: 0.875rem;
-  margin-top: 0.5rem;
+.ai-compose .ai-hint {
+  font-size: 0.8125rem;
+  margin-top: 0.375rem;
+}
+.ai-compose .ai-data {
+  margin-top: 0.25rem;
+  font-size: 0.8125rem;
+}
+.ai-compose .ai-data summary {
+  color: var(--bt-text-muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.ai-compose .ai-data[open] {
+  max-height: 30dvh;
+  overflow-y: auto;
 }
 .basket-panel {
   width: min(620px, calc(100% - 32px));
@@ -1258,8 +1319,22 @@ h3 {
 }
 .ai-answer,
 .ai-pending {
-  border-top: 1px solid var(--line, #ddd);
-  padding: 1rem 0;
+  padding: 0.75rem 0;
+}
+/* The customer's question on a grey bubble at the right; the answer on the panel. */
+.ai-question {
+  width: fit-content;
+  max-width: 85%;
+  margin: 0 0 0.75rem auto;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--bt-radius-control);
+  background: var(--bt-neutral);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ai-checked {
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
 }
 /* The progress line (spec r7 CH-02, CH-03): three dots bounce in turn and a soft
    lighter band moves across the label; under reduced motion both stay still. */
@@ -1339,8 +1414,15 @@ h3 {
   }
 }
 .ai-caution {
+  margin-top: 0.75rem;
   border-left: 3px solid #a67b35;
   padding-left: 0.75rem;
+  font-size: 0.875rem;
+  color: var(--bt-text-muted);
+}
+.ai-caution .ai-caution-label {
+  font-weight: 700;
+  color: var(--bt-text);
 }
 /* A chat card takes the whole panel row (two side by side only from about
    34rem of panel width) so the product name and price keep one line (CW1). */
@@ -1355,10 +1437,6 @@ h3 {
 }
 .ai-body details {
   margin: 0.75rem 0;
-}
-.ai-hint {
-  font-size: 0.875rem;
-  color: var(--bt-text-muted);
 }
 .ai-data p {
   margin-top: 0.5rem;

@@ -3620,8 +3620,8 @@ test("chat Enter sends, Shift+Enter adds a line, IME composition does not send (
   await fixture(page);
   const { turns } = await mockConsultant(page);
   for (const [lang, hint] of [
-    ["ru", "Enter — отправить. Shift+Enter — новая строка."],
-    ["uz", "Enter — yuborish. Shift+Enter — yangi qator."],
+    ["ru", "Enter — отправить."],
+    ["uz", "Enter — yuborish."],
   ] as const) {
     const panel = await openChat(page, lang);
     await expect(panel.locator(".ai-compose .muted")).toContainText(hint);
@@ -3706,13 +3706,13 @@ test("chat data notice is collapsed with OpenAI and OpenRouter; an example tap s
   for (const [lang, hint, data, first] of [
     [
       "ru",
-      "Не пишите в вопросе личные данные. Подробнее — в «Обработка данных».",
+      "Не пишите в вопросе личные данные. Enter — отправить.",
       "Обработка данных",
       "Как принимать IMMUNOCOMPLEX?",
     ],
     [
       "uz",
-      "Savolda shaxsiy maʼlumotlarni yozmang. Batafsil — «Maʼlumotlarni qayta ishlash» boʻlimida.",
+      "Savolda shaxsiy maʼlumotlarni yozmang. Enter — yuborish.",
       "Maʼlumotlarni qayta ishlash",
       "IMMUNOCOMPLEX KIDS qanday qabul qilinadi?",
     ],
@@ -3743,7 +3743,7 @@ test("chat data notice is collapsed with OpenAI and OpenRouter; an example tap s
     await expect(panel.getByRole("textbox")).toHaveValue("");
     // Examples step aside after the first message and return after reset.
     await expect(panel.locator(".ai-examples")).toHaveCount(0);
-    await panel.locator(".ai-body > button").click();
+    await panel.locator(".ai-head .ai-reset").click();
     await expect(examples).toHaveCount(3);
     await noOverflow(page);
   }
@@ -3769,7 +3769,7 @@ test("chat keeps and sends every exchange of the tab: the 6th request carries th
   // Every exchange of the tab stays on screen, oldest first.
   const shown = await answers.evaluateAll((sections) =>
     sections.map((s) => ({
-      question: s.querySelector("strong")?.textContent ?? "",
+      question: s.querySelector(".ai-question")?.textContent ?? "",
       answer: s.querySelector(".ai-plain")?.textContent ?? "",
     })),
   );
@@ -3894,9 +3894,10 @@ test("chat context_invalid still resets: empty history, null token, new tab id, 
 
 // --- spec r7 W4: send, progress line and scroll (CH-01 to CH-11) ---------------------
 
-/** P's client box, its scroll state, and the boxes the CH rules read. */
+/** P's client box, its scroll state, and the boxes the CH rules read. P is the
+ * message feed: the panel's header and form stay in place (storefront task 3). */
 async function chatGeometry(panel: Locator) {
-  return panel.evaluate((p) => {
+  return panel.locator(".ai-body").evaluate((p) => {
     const top = p.getBoundingClientRect().top + p.clientTop;
     const box = (e: Element | null | undefined) => {
       const r = e?.getBoundingClientRect();
@@ -3923,6 +3924,8 @@ test("chat send shows the question at once with an animated progress line; a sho
   await fixture(page);
   const consultant = await mockConsultant(page);
   const panel = await openChat(page, "ru", 1900);
+  // The feed between the fixed header and form must hold the short exchange (CH-04).
+  await page.setViewportSize({ width: 1900, height: 1300 });
   const draft = panel.getByRole("textbox", { name: "Ваш вопрос", exact: true });
   await draft.fill("first");
   await draft.press("Enter");
@@ -3932,7 +3935,7 @@ test("chat send shows the question at once with an animated progress line; a sho
   await expect.poll(() => consultant.turns.length).toBe(2);
   const pending = panel.locator(".ai-pending");
   await expect(pending).toHaveText("slow");
-  await expect(pending.locator("strong")).toHaveText("slow");
+  await expect(pending.locator(".ai-question")).toHaveText("slow");
   await expect(draft).toHaveValue("");
   await expect(draft).toBeFocused();
   // After the cards, directly above the live region; not a completed exchange.
@@ -4031,7 +4034,7 @@ test("chat long answer is read from its question; a customer who scrolled away s
       await draft.fill(`slow ${longText(lang)}`);
       await draft.press("Enter");
       await expect(panel.getByRole("status")).toHaveText(progress);
-      await panel.evaluate((p) => (p.scrollTop = 0));
+      await panel.locator(".ai-body").evaluate((p) => (p.scrollTop = 0));
       consultant.release();
       await expect(panel.locator(".ai-answer")).toHaveCount(4);
       expect((await chatGeometry(panel)).scrollTop).toBe(0);

@@ -62,6 +62,10 @@
   /* sRGB channel mixes: 12% white / 12% black from the action base. */
   --bt-action-hover: #295444;
   --bt-action-active: #0b3626;
+  /* Consultant panel header (owner's choice, variant 2): the action green with light text. */
+  --bt-consultant-header: var(--bt-action);
+  --bt-consultant-header-text: var(--bt-text-inverse);
+  --bt-consultant-header-caption: #d3e4df;
   /* Accepted standalone card palette, shared by neutral interaction roles. */
   --bt-neutral: #ebebeb;
   --bt-neutral-hover: #e3e3e3;

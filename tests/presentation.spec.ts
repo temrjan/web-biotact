@@ -543,7 +543,12 @@ test("brand-green 2px keyboard focus remains visible on detail, fields and modal
     await expect(page.locator(".basket-button")).toBeFocused();
     await page.locator(".top-ai").focus();
     await page.keyboard.press("Enter");
-    await greenFocus(page.locator(".assistant-panel .close-control"));
+    // On the green consultant header the ring is white (task 3 review r1, OPT-01).
+    const close = page.locator(".assistant-panel .close-control");
+    await expect(close).toBeFocused();
+    expect(await close.evaluate((e) => e.matches(":focus-visible"))).toBe(true);
+    await expect(close).toHaveCSS("outline-color", "rgb(255, 255, 255)");
+    await expect(close).toHaveCSS("outline-width", "2px");
     await greenFocus(page.locator(".assistant-panel textarea"));
     await noOverflow(page);
     if (width === 390)

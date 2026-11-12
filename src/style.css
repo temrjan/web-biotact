@@ -894,6 +894,10 @@ h3 {
 .ai-head .close-control {
   border-color: transparent;
 }
+/* The site's green focus ring would vanish on the green header. */
+.ai-head :focus-visible {
+  outline-color: var(--bt-consultant-header-text);
+}
 .ai-head .close-control:hover:enabled,
 .ai-head .ai-reset:hover:enabled {
   background: var(--bt-action-hover);

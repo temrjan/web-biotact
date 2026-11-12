@@ -86,6 +86,7 @@ const copy = {
     ],
     contacts: "Контакты",
     credit: "Разработка сайта —",
+    company: 'ООО "Biotact"',
   },
   uz: {
     video: "Probiotiklar va vitamin-mineral komplekslar",
@@ -105,6 +106,7 @@ const copy = {
     ],
     contacts: "Kontaktlar",
     credit: "Sayt ishlab chiqilgan:",
+    company: "“Biotact” MChJ",
   },
 };
 
@@ -271,7 +273,7 @@ export function CompanyFooter({ lang }: { lang: Language }) {
     <footer className="page-footer" aria-label={t.contacts}>
       <div className="footer-companies">
         <section aria-labelledby="footer-uz">
-          <h2 id="footer-uz">ООО "Biotact"</h2>
+          <h2 id="footer-uz">{t.company}</h2>
           {t.address.map((line) => (
             <p key={line}>{line}</p>
           ))}
@@ -296,7 +298,9 @@ export function CompanyFooter({ lang }: { lang: Language }) {
         </section>
       </div>
       <div className="footer-bottom">
-        <p>© {new Date().getFullYear()} ООО "Biotact"</p>
+        <p>
+          © {new Date().getFullYear()} {t.company}
+        </p>
         <p>
           {t.credit}{" "}
           <a

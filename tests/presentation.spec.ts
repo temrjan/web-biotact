@@ -1209,8 +1209,9 @@ test("AI draft stays local until explicit send and resets on semantic navigation
   );
   await page.locator(".top-utilities > a").click();
   await expect(page.locator(".account")).toBeVisible();
-  await expect(panel.locator(".ai-context")).toContainText(
-    "akkaunt maʼlumotlarisiz",
+  // The Account page is named as such, not as a "public catalogue" (task 4).
+  await expect(panel.locator(".ai-context strong")).toHaveText(
+    "Akkaunt · akkaunt maʼlumotlari maslahatchiga yuborilmaydi",
   );
   await expect(panel).not.toContainText("PRIVATE_CUSTOMER_123");
   const primary = page.locator(".account button");
@@ -1827,6 +1828,7 @@ test("Home sections: sale, Mini App category rows, lazy video, FAQ accordion, co
   // Bottom row: copyright on the left, developer credit on the right.
   const bottom = footer.locator(".footer-bottom > p");
   const year = new Date().getFullYear();
+  await expect(footer.locator("#footer-uz")).toHaveText('ООО "Biotact"');
   await expect(bottom).toHaveText([
     `© ${year} ООО "Biotact"`,
     "Разработка сайта — temrjan.com",
@@ -1889,10 +1891,14 @@ test("Home sections: sale, Mini App category rows, lazy video, FAQ accordion, co
     "Nutriyentlar API",
   );
   await expect(page.locator(".page-footer")).toContainText("Toshkent shahri");
+  // The Uzbek page names the company in its Uzbek legal form, spelled as the
+  // Captain's reference (C-101, typographic quotes).
+  await expect(page.locator("#footer-uz")).toHaveText("“Biotact” MChJ");
   await expect(page.locator(".footer-bottom > p")).toHaveText([
-    `© ${year} ООО "Biotact"`,
+    `© ${year} “Biotact” MChJ`,
     "Sayt ishlab chiqilgan: temrjan.com",
   ]);
+  await expect(page.locator(".page-footer")).not.toContainText("ООО");
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/#home?lang=uz");
@@ -4093,4 +4099,27 @@ test("chat failure with a new question typed keeps that question and drops the p
   await expect(draft).toHaveValue("next");
   await expect(panel.locator(".ai-pending")).toHaveCount(0);
   await expect(panel.locator(".ai-answer")).toHaveCount(0);
+});
+
+test("consultant says the context was reset only after «Начать заново» (task 4)", async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.clock.install();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/#home?lang=ru");
+  // Half an hour on the page without a conversation is no reset to announce
+  // (task 4 review r1, OPT-01).
+  await page.clock.runFor(30 * 60 * 1000 + 2000);
+  await page.locator(".sidebar .ai-nav").click();
+  const panel = page.locator(".assistant-panel");
+  await expect(panel.locator(".close-control")).toBeFocused();
+  const status = panel.locator(".ai-body [role=status]");
+  await expect(status).toHaveText("");
+  await panel
+    .getByRole("button", { name: "Начать заново", exact: true })
+    .click();
+  await expect(status).toHaveText(
+    "Контекст сброшен. Можно задать новый вопрос.",
+  );
 });

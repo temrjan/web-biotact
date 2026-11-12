@@ -184,7 +184,8 @@ test("a failed required category page cannot advertise a partial catalogue; retr
   await expect(
     page.getByText("Товары не найдены", { exact: true }),
   ).toBeVisible();
-  await expect(page.locator(".result-count")).toContainText("0");
+  // An empty result shows no "Товаров: 0 · Страница 1 / 1" line (task 4).
+  await expect(page.locator(".result-count")).toHaveCount(0);
 });
 
 for (const kind of ["language", "filter", "detail"])

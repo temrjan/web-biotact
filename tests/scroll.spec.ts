@@ -40,6 +40,12 @@ async function expectAt(page: Page, loaded: Locator, y: number) {
   }
 }
 
+/** A loaded catalogue: its count line, or «Товары не найдены» when empty (no count then). */
+const loadedCatalogue = (page: Page) =>
+  page
+    .locator(".result-count")
+    .or(page.getByText("Товары не найдены", { exact: true }));
+
 /** Follows a link without the pointer scrolling it into view first. */
 const follow = (link: Locator) => link.evaluate((a: HTMLElement) => a.click());
 
@@ -51,7 +57,7 @@ test("navigation opens pages at the top; Back, Forward and language keep positio
   await fixture(page);
   await slowReads(page);
   await page.setViewportSize({ width: 1440, height: 900 });
-  const count = page.locator(".result-count"),
+  const count = loadedCatalogue(page),
     home = page.locator('[data-category="product"] article'),
     detail = page.locator(".product-detail h1, main h1"),
     sideMenu = page.locator(".sidebar .nav-primary"),
@@ -165,7 +171,7 @@ test("phone menu, list and Back keep the same rules (433 px, 21–25)", async ({
   await fixture(page);
   await slowReads(page);
   await page.setViewportSize({ width: 433, height: 861 });
-  const count = page.locator(".result-count"),
+  const count = loadedCatalogue(page),
     home = page.locator('[data-category="product"] article'),
     detail = page.locator("main h1");
   async function menu(name: string) {
@@ -206,7 +212,7 @@ test("user input stops a restore; a reload starts at the top", async ({
 }) => {
   await fixture(page);
   await page.setViewportSize({ width: 1440, height: 900 });
-  const count = page.locator(".result-count"),
+  const count = loadedCatalogue(page),
     detail = page.locator("main h1");
   await page.goto("/#catalogue?page=1&lang=ru");
   await expect(count).toBeVisible();

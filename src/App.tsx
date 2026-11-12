@@ -97,7 +97,8 @@ const copy = {
     ai: "ИИ-консультант",
     aiShort: "ИИ · помощь",
     product: "Товар",
-    publicContext: "Публичный каталог · без данных аккаунта",
+    accountContext: "Аккаунт · данные аккаунта консультанту не передаются",
+    orderContext: "Заказ · данные заказа консультанту не передаются",
   },
   uz: {
     home: "Bosh sahifa",
@@ -149,7 +150,8 @@ const copy = {
     ai: "AI-maslahatchi",
     aiShort: "AI · yordam",
     product: "Mahsulot",
-    publicContext: "Ochiq katalog · akkaunt maʼlumotlarisiz",
+    accountContext: "Akkaunt · akkaunt maʼlumotlari maslahatchiga yuborilmaydi",
+    orderContext: "Buyurtma · buyurtma maʼlumotlari maslahatchiga yuborilmaydi",
   },
 };
 const slugs = ["product", "vitaminy-set", "tehnika", "active-life"];
@@ -867,10 +869,12 @@ function Catalogue({
                 <State result={data.result} lang={lang} retry={data.retry}>
                   {data.result.status === "ready" && (
                     <>
-                      <p className="result-count" role="status">
-                        {t.count}: {data.result.data.total} · {t.page}{" "}
-                        {loc.page} / {data.result.data.pages}
-                      </p>
+                      {data.result.data.total > 0 && (
+                        <p className="result-count" role="status">
+                          {t.count}: {data.result.data.total} · {t.page}{" "}
+                          {loc.page} / {data.result.data.pages}
+                        </p>
+                      )}
                       {data.result.data.items.length ? (
                         <Grid
                           products={data.result.data.items}
@@ -1471,7 +1475,11 @@ export default function App() {
         ? t.catalogue
         : loc.view === "product"
           ? `${t.product} №${loc.id}`
-          : t.publicContext;
+          : loc.view === "account"
+            ? t.accountContext
+            : loc.view === "order"
+              ? t.orderContext
+              : t.invalid;
   const all = href({ view: "catalogue", lang: loc.lang, page: 1 });
   const basketButton = (
     <button

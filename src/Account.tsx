@@ -8,8 +8,8 @@ import { homeTop } from "./navigation";
 /** Notice key rendered in the current page language; never shown as text. */
 const TELEGRAM_UNAVAILABLE = "telegram_unavailable";
 const telegramUnavailable = {
-  ru: "Вход через Telegram сейчас недоступен.",
-  uz: "Telegram orqali kirish hozircha mavjud emas.",
+  ru: "Вход в Biotact Club — через официальный Telegram-бот: вы подтверждаете вход в боте и возвращаетесь в этот браузер. На сайте вход пока не открыт; когда откроется, здесь появится кнопка входа.",
+  uz: "Biotact Clubʼga kirish rasmiy Telegram-bot orqali: botda kirishni tasdiqlaysiz va shu brauzerga qaytasiz. Saytda kirish hozircha ochilmagan; ochilganda shu yerda kirish tugmasi paydo boʻladi.",
 };
 
 type View =

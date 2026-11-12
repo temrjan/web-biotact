@@ -105,9 +105,11 @@ export function returnAddress(search: string): string | null {
     : null;
 }
 /**
- * The logo and the home menu link show the home view from its top, also when it is
- * already shown (the hash then does not change). A click with a modifier key or another
- * mouse button keeps the browser's default; Enter on a focused link clicks with button 0.
+ * The logo and the home menu link show the home view from its top when it is already
+ * shown: the hash then does not change, so the navigation scroll handler does not run.
+ * From another view the handler opens home at its top and keeps the left position for
+ * Back. A click with a modifier key or another mouse button keeps the browser's default;
+ * Enter on a focused link clicks with button 0.
  */
 export function homeTop(e: {
   button: number;
@@ -116,6 +118,13 @@ export function homeTop(e: {
   shiftKey: boolean;
   altKey: boolean;
 }): void {
-  if (e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey)
+  if (
+    e.button === 0 &&
+    !e.metaKey &&
+    !e.ctrlKey &&
+    !e.shiftKey &&
+    !e.altKey &&
+    parseLocation(window.location.hash).view === "home"
+  )
     window.scrollTo(0, 0);
 }

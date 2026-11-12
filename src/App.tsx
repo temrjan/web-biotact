@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -29,6 +30,7 @@ import { useGuestBasket } from "./guestBasket";
 import type { Order } from "./guest";
 import OrderView from "./Order";
 import { homeTop, href, parseLocation, type Location } from "./navigation";
+import { navigationScroll } from "./scrollRestoration";
 import logoUrl from "./assets/logo-biotact.svg";
 import {
   ChevronLeft,
@@ -195,6 +197,14 @@ function useRead<T>(
   }, [requestKey, enabled]);
   const result: Read<T> =
     enabled && saved?.key === requestKey ? saved.result : { status: "loading" };
+  // A restored scroll position waits until every read of the shown page has loaded.
+  const [token] = useState(() => ({}));
+  const loading = enabled && result.status === "loading";
+  useLayoutEffect(
+    () => navigationScroll.track(token, loading),
+    [token, loading],
+  );
+  useLayoutEffect(() => () => navigationScroll.track(token, false), [token]);
   return { result, retry: () => setRevision((n) => n + 1) };
 }
 function State({
@@ -945,11 +955,6 @@ function Recommended({
     <section
       className="home-section product-recommended"
       aria-labelledby="product-recommended"
-      onClickCapture={(e) => {
-        // As in the Mini App, an opened recommendation starts at the top of its page.
-        if (e.target instanceof Element && e.target.closest("a[href]"))
-          window.scrollTo(0, 0);
-      }}
     >
       <div className="section-head slider-head">
         <h2 id="product-recommended">{t.recommended}</h2>
@@ -1282,6 +1287,8 @@ export default function App() {
     origin = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const change = () => {
+      // First: the position of the entry being left is still the current one.
+      navigationScroll.leave(hashRef.current, window.location.hash);
       const previous = parseLocation(hashRef.current);
       const next = parseLocation(window.location.hash);
       const languageOnly =
@@ -1317,6 +1324,9 @@ export default function App() {
     (s) => api.categories(loc.lang, s),
     loc.view !== "invalid",
   );
+  // After the reads above and in the views have reported, for every shown hash.
+  useLayoutEffect(() => navigationScroll.start(), []);
+  useLayoutEffect(() => navigationScroll.rendered(), [hash]);
   function dismiss() {
     sizeEpoch.current += 1;
     setSurface(sizeRequest?.beforeAdd ? "assistant" : null);

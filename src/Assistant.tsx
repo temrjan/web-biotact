@@ -110,6 +110,7 @@ export default function Assistant({
   lang,
   context,
   pageProductId,
+  pageContext,
   active,
   dialogRef,
   onClose,
@@ -121,6 +122,7 @@ export default function Assistant({
   lang: Language;
   context: string;
   pageProductId: number | null;
+  pageContext: api.PageContext;
   active: boolean;
   dialogRef: RefObject<HTMLDialogElement | null>;
   onClose: () => void;
@@ -318,6 +320,7 @@ export default function Assistant({
         })),
       ),
       page_product_id: pageProductId,
+      page_context: pageContext,
       context_token: token.current,
     };
     const controller = new AbortController();

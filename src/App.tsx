@@ -1777,6 +1777,10 @@ export default function App() {
         key={href(loc)}
         active={surface === "assistant"}
         pageProductId={loc.view === "product" ? loc.id || null : null}
+        pageContext={{
+          view: loc.view,
+          category_id: loc.view === "catalogue" ? (loc.category ?? null) : null,
+        }}
         change={changeQuantity}
         chooseSize={chooseSize}
         renderCard={(product, actions, disabled) => (

@@ -15,6 +15,17 @@ export interface Pair {
   question: string;
   answer: string;
 }
+export type PageView =
+  | "home"
+  | "catalogue"
+  | "product"
+  | "account"
+  | "order"
+  | "invalid";
+export interface PageContext {
+  view: PageView;
+  category_id: number | null;
+}
 export interface Turn {
   request_id: string;
   tab_id: string;
@@ -23,6 +34,7 @@ export interface Turn {
   question: string;
   history: Pair[];
   page_product_id: number | null;
+  page_context?: PageContext | null;
   context_token: string | null;
 }
 export interface Answer {

@@ -21,6 +21,7 @@ test("native Assistant to Shop/PG/provider boundary to cards and size basket, wi
   await expect(card).toBeVisible();
   await expect(panel.locator(".ai-answer")).toContainText("Состав указан");
   expect(turns[0]?.history).toEqual([]);
+  expect(turns[0]?.page_context).toEqual({ view: "home", category_id: null });
   // Commercial change consumes no Add. The second explicit click opens native sizes.
   await request.post("/__fixture/change", { data: { change: "price" } });
   await card.locator(".add").click();
@@ -55,6 +56,17 @@ test("native Assistant to Shop/PG/provider boundary to cards and size basket, wi
   await draft.press("Control+Enter");
   await expect(panel.locator(".ai-answer").last()).toContainText("100");
   expect(turns[2]?.context_token).not.toBeNull();
+  expect(turns[2]?.page_context).toEqual({ view: "home", category_id: null });
   await expect(panel.locator('[data-product-id="4"] .add')).toBeDisabled();
   await expect(page.locator(".basket-badge")).toHaveText("1");
+  // UX-W02 + UX-R01 + UX-R03: route remount resets chat and sends product page_context for bare price query.
+  await page.goto("/#product?id=20&lang=ru");
+  await expect(panel.locator(".ai-answer")).toHaveCount(0);
+  await draft.fill("цена");
+  await draft.press("Control+Enter");
+  await expect(panel.locator(".ai-answer").last()).toContainText("250");
+  await expect(panel.locator('[data-product-id="20"]')).toBeVisible();
+  expect(turns[3]?.page_context).toEqual({ view: "product", category_id: null });
+  expect(turns[3]?.page_product_id).toBe(20);
+  expect(turns[3]?.context_token).toBeNull();
 });

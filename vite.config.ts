@@ -6,7 +6,7 @@ import react from "@vitejs/plugin-react";
 const LICENSE_FILE = "licenses.txt";
 
 /**
- * Appends the licence of the inline Lucide icons, which are copied source
+ * Appends the licences of the inline Lucide and Heroicons icons, which are copied source
  * rather than a bundled package, to Vite's licence file. The text is the
  * notice kept at the top of `src/icons.tsx`.
  */
@@ -27,7 +27,7 @@ function inlineIconLicence(): Plugin {
         if (file?.type !== "asset" || !notice)
           throw new Error("Licence file or inline icon notice not found");
         const text = notice.replace(/^ \*( |$)/gm, "");
-        file.source = `${String(file.source).trimEnd()}\n\n## Lucide icons, inline copies in this site\n\n${text}\n`;
+        file.source = `${String(file.source).trimEnd()}\n\n## Lucide and Heroicons icons, inline copies in this site\n\n${text}\n`;
       },
     },
   };

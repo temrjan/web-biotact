@@ -1167,7 +1167,13 @@ test("AI draft stays local until explicit send and resets on semantic navigation
   const panel = page.locator(".assistant-panel");
   await expect(panel.locator(".close-control")).toBeFocused();
   expect(await panel.evaluate((e) => e.matches(":modal"))).toBe(false);
-  await expect(panel).toContainText("Не ставлю диагноз");
+  // The header holds no scope text: the greeting in the feed already says it.
+  await expect(panel.locator(".ai-head")).not.toContainText("Помогу");
+  // The greeting keeps the no-diagnosis line once the header lost it.
+  await expect(panel.locator(".ai-examples .ai-scope")).toHaveText(
+    "Не ставлю диагноз и не назначаю лечение.",
+  );
+  await expect(panel.locator(".ai-context")).toHaveText("Страница: Главная");
   await expect(panel.locator(".ai-context strong")).toHaveText("Главная");
   const baseline = requests.length,
     address = page.url(),
@@ -1198,7 +1204,7 @@ test("AI draft stays local until explicit send and resets on semantic navigation
   await expect(page.locator(".product-main")).toBeVisible();
   await expect(panel.locator(".ai-context strong")).toHaveText("Товар №4001");
   await page.locator('.languages [lang="uz"]').click();
-  await expect(panel.locator("h2")).toHaveText("AI-maslahatchi");
+  await expect(panel.locator("h2")).toHaveText("AI maslahatchi");
   await expect(panel.getByRole("textbox")).toHaveValue("");
   await expect(
     panel.getByRole("button", { name: "Yuborish", exact: true }),
@@ -3041,7 +3047,7 @@ test("phone header is one row of icons with in-place search; Account and RU/UZ m
     ]);
     await expect(page.locator(".menu-toggle")).toHaveText("Меню ☰");
     await headerIcon(page.locator(".top-search"), "Поиск товаров");
-    await headerIcon(page.locator(".top-ai"), "ИИ-консультант");
+    await headerIcon(page.locator(".top-ai"), "AI консультант");
     await headerIcon(page.locator(".topbar .basket-button"), "Корзина");
     // All four controls share one row.
     const centres = await bar
@@ -3064,7 +3070,7 @@ test("phone header is one row of icons with in-place search; Account and RU/UZ m
     );
     await ariaControlsResolve(page);
     await expect(bar.locator(".search, .languages, a")).toHaveCount(0);
-    await expect(bar).not.toContainText("ИИ · помощь");
+    await expect(bar).not.toContainText("AI · помощь");
     await page.locator(".top-search").hover();
     await expect(page.locator(".top-search")).toHaveCSS(
       "background-color",
@@ -3147,7 +3153,7 @@ test("phone header is one row of icons with in-place search; Account and RU/UZ m
   await expect(page).toHaveURL(/#home\?lang=uz$/);
   await expect(page.locator(".menu-toggle")).toBeFocused();
   await headerIcon(page.locator(".top-search"), "Mahsulot qidirish");
-  await headerIcon(page.locator(".top-ai"), "AI-maslahatchi");
+  await headerIcon(page.locator(".top-ai"), "AI maslahatchi");
   await headerIcon(page.locator(".topbar .basket-button"), "Savat");
   await page.locator(".top-search").click();
   await expect(
@@ -3178,7 +3184,7 @@ test("phone header is one row of icons with in-place search; Account and RU/UZ m
   await expect(
     top.getByRole("textbox", { name: "Поиск товаров" }),
   ).toBeVisible();
-  await expect(top.locator(".top-ai")).toHaveText("ИИ · помощь");
+  await expect(top.locator(".top-ai")).toHaveText("AI · помощь");
   await expect(top.getByRole("link", { name: "Аккаунт" })).toBeVisible();
   await expect(top.locator(".languages a")).toHaveText(["RU", "UZ"]);
   await expect(page.locator(".languages")).toHaveCount(1);

@@ -43,7 +43,7 @@ import {
   LayoutGridIcon,
   PillIcon,
   SearchIcon,
-  SparklesIcon,
+  AiMarkIcon,
   UserIcon,
 } from "./icons";
 
@@ -94,8 +94,8 @@ const copy = {
     nextItems: "Следующие товары",
     recommended: "Рекомендуемые продукты",
     gallery: "Изображение",
-    ai: "ИИ-консультант",
-    aiShort: "ИИ · помощь",
+    ai: "AI консультант",
+    aiShort: "AI · помощь",
     product: "Товар",
     accountContext: "Аккаунт · данные аккаунта консультанту не передаются",
     orderContext: "Заказ · данные заказа консультанту не передаются",
@@ -147,7 +147,7 @@ const copy = {
     nextItems: "Keyingi mahsulotlar",
     recommended: "Tavsiya etilgan mahsulotlar",
     gallery: "Rasm",
-    ai: "AI-maslahatchi",
+    ai: "AI maslahatchi",
     aiShort: "AI · yordam",
     product: "Mahsulot",
     accountContext: "Akkaunt · akkaunt maʼlumotlari maslahatchiga yuborilmaydi",
@@ -1393,9 +1393,17 @@ export default function App() {
     if (e.key !== "Tab" || !e.currentTarget.matches(":modal")) return;
     const items = Array.from(
       e.currentTarget.querySelectorAll<HTMLElement>(
-        "a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled)",
+        "a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), summary",
       ),
-    ).filter((node) => node.getClientRects().length > 0);
+    ).filter((node) => {
+      // Content of a closed <details> keeps its boxes but cannot take focus;
+      // only that details' own summary can.
+      const closed = node.closest("details:not([open])");
+      return (
+        node.getClientRects().length > 0 &&
+        (!closed || !!closed.querySelector(":scope > summary")?.contains(node))
+      );
+    });
     const first = items[0],
       last = items[items.length - 1];
     if (e.shiftKey && document.activeElement === first) {
@@ -1587,7 +1595,10 @@ export default function App() {
           aria-expanded={surface === "assistant"}
           onClick={(e) => show("assistant", e.currentTarget)}
         >
-          {t.ai}
+          <span className="ai-label">
+            <AiMarkIcon />
+            {t.ai}
+          </span>
           <span aria-hidden="true">↗</span>
         </button>
         {sidebar && !compact && basketButton}
@@ -1709,7 +1720,8 @@ export default function App() {
                   aria-expanded={surface === "assistant"}
                   onClick={(e) => show("assistant", e.currentTarget)}
                 >
-                  {compact ? <SparklesIcon /> : t.aiShort}
+                  <AiMarkIcon />
+                  {!compact && t.aiShort}
                 </button>
                 {compact && basketButton}
                 {/* Phones reach Account and the language in the menu (M3, M4). */}

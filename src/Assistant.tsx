@@ -10,6 +10,7 @@ import {
 import type { Language, Product } from "./catalogue";
 import { afterAnswer, reveal, type Box } from "./chatScroll";
 import * as api from "./consultant";
+import { AiMarkIcon, RotateCcwIcon } from "./icons";
 import { href } from "./navigation";
 
 export type BeforeAdd = (size: string) => Promise<Product | null>;
@@ -23,11 +24,9 @@ export interface AssistantCardActions {
 }
 const copy = {
   ru: {
-    title: "ИИ-консультант",
+    title: "AI консультант",
     close: "Закрыть консультанта",
-    scope:
-      "Помогу разобраться в товарах и их инструкциях. Не ставлю диагноз и не назначаю лечение.",
-    context: "Сейчас на странице",
+    context: "Страница",
     draft: "Ваш вопрос",
     send: "Отправить",
     cancel: "Отменить",
@@ -40,6 +39,7 @@ const copy = {
     fromInstruction: "Из инструкции",
     abilities:
       "Помогу выбрать товар, расскажу о составе, способе приёма и цене. Например:",
+    scope: "Не ставлю диагноз и не назначаю лечение.",
     examples: [
       "Как принимать IMMUNOCOMPLEX?",
       "Как принимать NEUROCOMPLEX KIDS?",
@@ -62,11 +62,9 @@ const copy = {
     count: "Символов",
   },
   uz: {
-    title: "AI-maslahatchi",
+    title: "AI maslahatchi",
     close: "Maslahatchini yopish",
-    scope:
-      "Mahsulotlar va ularning yoʻriqnomalarini tushunishga yordam beraman. Tashxis qoʻymayman va davolash buyurmayman.",
-    context: "Hozirgi sahifa",
+    context: "Sahifa",
     draft: "Savolingiz",
     send: "Yuborish",
     cancel: "Bekor qilish",
@@ -79,6 +77,7 @@ const copy = {
     fromInstruction: "Yoʻriqnomadan",
     abilities:
       "Mahsulot tanlashga yordam beraman, tarkibi, qabul qilish usuli va narxi haqida aytib beraman. Masalan:",
+    scope: "Tashxis qoʻymayman va davolash buyurmayman.",
     examples: [
       "IMMUNOCOMPLEX KIDS qanday qabul qilinadi?",
       "IMMUNOCOMPLEX qanday qabul qilinadi?",
@@ -480,10 +479,10 @@ export default function Assistant({
     >
       <div className="ai-head">
         <div className="dialog-heading">
-          <h2 id="assistant-title">{t.title}</h2>
-          <button type="button" className="ai-reset" onClick={() => reset()}>
-            {t.reset}
-          </button>
+          <h2 id="assistant-title">
+            <AiMarkIcon />
+            {t.title}
+          </h2>
           <button
             className="close-control"
             data-initial-focus
@@ -496,12 +495,15 @@ export default function Assistant({
             ×
           </button>
         </div>
-        <p className="ai-caption" id="assistant-preview">
-          {t.scope}
-        </p>
-        <p className="ai-context">
-          {t.context}: <strong>{context}</strong>
-        </p>
+        <div className="ai-bar">
+          <p className="ai-context" id="assistant-preview">
+            {t.context}: <strong>{context}</strong>
+          </p>
+          <button type="button" className="ai-reset" onClick={() => reset()}>
+            <RotateCcwIcon />
+            {t.reset}
+          </button>
+        </div>
       </div>
       <div className="ai-body" ref={feed}>
         {entries.length === 0 && (
@@ -523,6 +525,7 @@ export default function Assistant({
                 </button>
               ))}
             </div>
+            <p className="muted ai-scope">{t.scope}</p>
           </div>
         )}
         {entries.map((entry, index) => (

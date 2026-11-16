@@ -1599,7 +1599,6 @@ export default function App() {
             <AiMarkIcon />
             {t.ai}
           </span>
-          <span aria-hidden="true">↗</span>
         </button>
         {sidebar && !compact && basketButton}
         <a

@@ -1393,9 +1393,17 @@ export default function App() {
     if (e.key !== "Tab" || !e.currentTarget.matches(":modal")) return;
     const items = Array.from(
       e.currentTarget.querySelectorAll<HTMLElement>(
-        "a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled)",
+        "a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), summary",
       ),
-    ).filter((node) => node.getClientRects().length > 0);
+    ).filter((node) => {
+      // Content of a closed <details> keeps its boxes but cannot take focus;
+      // only that details' own summary can.
+      const closed = node.closest("details:not([open])");
+      return (
+        node.getClientRects().length > 0 &&
+        (!closed || !!closed.querySelector(":scope > summary")?.contains(node))
+      );
+    });
     const first = items[0],
       last = items[items.length - 1];
     if (e.shiftKey && document.activeElement === first) {

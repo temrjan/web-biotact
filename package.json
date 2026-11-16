@@ -16,7 +16,7 @@
     "test": "vitest run",
     "test:browser": "playwright test login.spec.ts",
     "test:browser:email": "playwright test capability.spec.ts",
-    "test:browser:catalogue": "playwright test catalogue.spec.ts presentation.spec.ts guest.spec.ts scroll.spec.ts consultant-panel.spec.ts",
+    "test:browser:catalogue": "playwright test catalogue.spec.ts presentation.spec.ts guest.spec.ts scroll.spec.ts consultant-panel.spec.ts consultant.spec.ts",
     "test:browser:native": "playwright test catalogue.native.spec.ts",
     "test:browser:guest": "playwright test guest.spec.ts",
     "test:browser:guest:native": "playwright test guest.native.spec.ts"

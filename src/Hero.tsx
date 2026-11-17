@@ -158,6 +158,7 @@ export default function Hero({
   const settledKeyRef = useRef("");
   const activatedAtRef = useRef(0);
   const autoStartedRef = useRef(false);
+  const playPendingRef = useRef(false);
   const clipSnapshotRef = useRef<ClipState>(createClipState(""));
 
   const [layout, setLayout] = useState<{ measured: boolean; narrow: boolean }>({
@@ -315,13 +316,22 @@ export default function Hero({
       video.muted = true;
       if (withBudget && !manual) startBudgetFor(targetKey);
       else clearBudgetTimer();
-      const rejectPlay = () => {
-        clearBudgetTimer();
+      playPendingRef.current = true;
+      const rejectPlay = (err?: unknown) => {
+        playPendingRef.current = false;
         if (currentKeyRef.current !== targetKey) return;
+        const errName =
+          err && typeof err === "object" && "name" in err
+            ? String((err as { name?: unknown }).name)
+            : "";
+        if (errName === "AbortError") return;
+        clearBudgetTimer();
         setClipState((prev) =>
           prev.key === targetKey &&
           prev.status !== "still-only" &&
-          prev.status !== "playing"
+          prev.status !== "playing" &&
+          !prev.visibilityPaused &&
+          !prev.visitorPaused
             ? { ...prev, status: "refused" }
             : prev,
         );
@@ -329,15 +339,20 @@ export default function Hero({
       let playPromise: unknown;
       try {
         playPromise = video.play();
-      } catch {
-        rejectPlay();
+      } catch (err) {
+        rejectPlay(err);
         return;
       }
       if (
         playPromise &&
-        typeof (playPromise as Promise<unknown>).catch === "function"
+        typeof (playPromise as Promise<unknown>).then === "function"
       ) {
-        void (playPromise as Promise<unknown>).catch(rejectPlay);
+        void (playPromise as Promise<unknown>).then(() => {
+          if (currentKeyRef.current === targetKey)
+            playPendingRef.current = false;
+        }, rejectPlay);
+      } else {
+        playPendingRef.current = false;
       }
     },
     [clearBudgetTimer, startBudgetFor],
@@ -380,6 +395,7 @@ export default function Hero({
     activatedAtRef.current = Date.now();
     settledKeyRef.current = "";
     autoStartedRef.current = false;
+    playPendingRef.current = false;
     return clearBudgetTimer;
   }, [activationKey, clearBudgetTimer]);
 
@@ -394,7 +410,13 @@ export default function Hero({
   useEffect(() => {
     if (!layout.measured) return;
     const syncImg = (el: HTMLImageElement | null, url: string | null) => {
-      if (el && url && el.complete && imageStates[url] === undefined) {
+      if (
+        el &&
+        url &&
+        el.getAttribute("src") === url &&
+        el.complete &&
+        imageStates[url] === undefined
+      ) {
         markImage(url, el.naturalWidth > 0 ? "loaded" : "error");
       }
     };
@@ -434,12 +456,18 @@ export default function Hero({
         if (
           snap.key === key &&
           (snap.status === "playing" ||
+            playPendingRef.current ||
             (snap.status === "idle" &&
               autoStartedRef.current &&
               budgetTimerRef.current !== null))
         ) {
           clearBudgetTimer();
+          playPendingRef.current = false;
           video?.pause();
+          clipSnapshotRef.current =
+            snap.status !== "still-only"
+              ? { ...snap, status: "paused", visibilityPaused: true }
+              : snap;
           setClipState((prev) =>
             prev.key === key && prev.status !== "still-only"
               ? { ...prev, status: "paused", visibilityPaused: true }
@@ -455,6 +483,7 @@ export default function Hero({
         !snap.visitorPaused &&
         video
       ) {
+        clipSnapshotRef.current = { ...snap, visibilityPaused: false };
         setClipState((prev) =>
           prev.key === key ? { ...prev, visibilityPaused: false } : prev,
         );
@@ -519,7 +548,7 @@ export default function Hero({
       hidden ||
       obscured ||
       busy ||
-      !onScreen
+      (isVideoSlide && !onScreen)
     )
       return;
 
@@ -535,13 +564,10 @@ export default function Hero({
     }
 
     if (isEffectiveStillOnly) {
-      const readyAt =
-        effectiveClip.budgetExpiredAt !== null
-          ? Math.max(
-              activatedAtRef.current + interval,
-              effectiveClip.budgetExpiredAt,
-            )
-          : Date.now() + interval;
+      const readyAt = Math.max(
+        activatedAtRef.current + interval,
+        effectiveClip.budgetExpiredAt ?? 0,
+      );
       const timer = setTimeout(
         advanceToNext,
         Math.max(0, readyAt - Date.now()),
@@ -610,6 +636,7 @@ export default function Hero({
 
   const handleVideoPlaying = () => {
     clearBudgetTimer();
+    playPendingRef.current = false;
     const key = currentKeyRef.current;
     setClipState((prev) =>
       prev.key === key && prev.status !== "still-only"
@@ -626,6 +653,7 @@ export default function Hero({
 
   const handleVideoEnded = () => {
     clearBudgetTimer();
+    playPendingRef.current = false;
     const key = currentKeyRef.current;
     if (count === 1) {
       const video = videoRef.current;
@@ -649,6 +677,7 @@ export default function Hero({
 
   const handleVideoError = () => {
     clearBudgetTimer();
+    playPendingRef.current = false;
     const key = currentKeyRef.current;
     setClipState((prev) =>
       prev.key === key
@@ -662,6 +691,7 @@ export default function Hero({
     const key = activationKey;
     if (effectiveClip.status === "playing") {
       clearBudgetTimer();
+      playPendingRef.current = false;
       video?.pause();
       setClipState((prev) =>
         prev.key === key
@@ -701,10 +731,12 @@ export default function Hero({
         isVideoSlide &&
         !isEffectiveStillOnly &&
         (effectiveClip.status === "playing" ||
+          playPendingRef.current ||
           (effectiveClip.status === "idle" &&
             budgetTimerRef.current !== null))
       ) {
         clearBudgetTimer();
+        playPendingRef.current = false;
         videoRef.current?.pause();
         setClipState((prev) =>
           prev.key === key
@@ -835,6 +867,16 @@ export default function Hero({
           const videoBanner = isVideoBanner(item);
           const canLoadStill =
             layout.measured && (index === 0 || firstStillSettled);
+          const previousLoadedStill =
+            item.image_mobile_url &&
+            imageStates[item.image_mobile_url] === "loaded"
+              ? item.image_mobile_url
+              : imageStates[item.image_url] === "loaded"
+                ? item.image_url
+                : undefined;
+          const renderedStillSrc = canLoadStill
+            ? stillSrc
+            : previousLoadedStill;
           const copyText = bannerText(item, lang);
           const accessibleName = copyText.title || `${t.banner} ${index + 1}`;
           const imgRef =
@@ -881,13 +923,17 @@ export default function Hero({
                 <div className="hero-media">
                   <img
                     ref={imgRef}
-                    src={canLoadStill ? stillSrc : undefined}
+                    src={renderedStillSrc}
                     alt={videoBanner ? "" : accessibleName}
                     draggable={false}
                     decoding="async"
                     fetchPriority={index === 0 ? "high" : "auto"}
-                    onLoad={() => markImage(stillSrc, "loaded")}
-                    onError={() => markImage(stillSrc, "error")}
+                    onLoad={() =>
+                      renderedStillSrc && markImage(renderedStillSrc, "loaded")
+                    }
+                    onError={() =>
+                      renderedStillSrc && markImage(renderedStillSrc, "error")
+                    }
                   />
                   {active && shouldMountVideo && clipSrc && (
                     <video

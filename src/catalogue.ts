@@ -278,19 +278,35 @@ export function categoryProducts(
 export interface Banner {
   id: number;
   title: string;
+  title_uz: string | null;
+  subtitle: string | null;
+  subtitle_uz: string | null;
   image_url: string;
+  image_mobile_url: string | null;
+  video_url: string | null;
+  video_mobile_url: string | null;
   link_url: string | null;
 }
-/** Admin banner in the requested language; a banner without an image has nothing to show. */
-export function banner(v: unknown, lang: Language): Banner | null {
+function optionalText(v: unknown): string | null {
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+function optionalSafeMedia(v: unknown, video = false): string | null {
+  return typeof v === "string" ? safeMedia(v, video) : null;
+}
+function parseBanner(
+  v: unknown,
+  lang: Language,
+  allowInactive: boolean,
+): Banner | null {
   const d = object(v);
   const title = optional(d.title),
     titleUz = optional(d.title_uz);
+  const active = flag(d.is_active);
   if (
     title === null ||
     typeof d.sort_order !== "number" ||
     !Number.isSafeInteger(d.sort_order) ||
-    !flag(d.is_active)
+    (!allowInactive && !active)
   )
     throw new ReadError();
   const image = safeMedia(optional(d.image_url));
@@ -298,10 +314,34 @@ export function banner(v: unknown, lang: Language): Banner | null {
     ? {
         id: integer(d.id, 1),
         title: lang === "uz" && titleUz?.trim() ? titleUz : title,
+        title_uz: titleUz?.trim() ? titleUz.trim() : null,
+        subtitle: optionalText(d.subtitle),
+        subtitle_uz: optionalText(d.subtitle_uz),
         image_url: image,
+        image_mobile_url: optionalSafeMedia(d.image_mobile_url, false),
+        video_url: optionalSafeMedia(d.video_url, true),
+        video_mobile_url: optionalSafeMedia(d.video_mobile_url, true),
         link_url: optional(d.link_url),
       }
     : null;
+}
+/** Admin banner in the requested language; a banner without an image has nothing to show. */
+export function banner(v: unknown, lang: Language): Banner | null {
+  return parseBanner(v, lang, false);
+}
+/** Single banner by ID (active or hidden) for the website preview address (P-02). */
+export async function bannerById(
+  id: number,
+  lang: Language,
+  signal: AbortSignal,
+): Promise<Banner | null> {
+  const parsed = parseBanner(
+    await get(`/banners/${id}`, lang, signal),
+    lang,
+    true,
+  );
+  if (parsed && parsed.id !== id) throw new ReadError();
+  return parsed;
 }
 /** Active banners in server order, read in pages of 100 like the Mini App. */
 export async function banners(

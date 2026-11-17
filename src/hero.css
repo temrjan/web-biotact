@@ -2,18 +2,17 @@
   container: hero / inline-size;
   margin-bottom: 2rem;
 }
-/* Admin banner artwork is prepared at about 3:1, as in the Mini App. */
+/* Admin banner artwork is prepared at 3:1 (wide) or 3:2 (phone format). */
 .hero-stage {
   position: relative;
   isolation: isolate;
   display: grid;
-  aspect-ratio: 3 / 1;
   touch-action: pan-y;
 }
 .hero-loading {
+  aspect-ratio: 3 / 1;
   border-radius: 20px;
   background: var(--bt-surface-subtle);
-  margin-bottom: 2rem;
 }
 .hero-banner {
   position: relative;
@@ -23,6 +22,12 @@
   border-radius: 20px;
   background: var(--bt-surface-subtle);
   box-shadow: var(--bt-shadow-raised);
+}
+.hero[data-format="fallback"][data-has-video="true"] .hero-banner {
+  overflow: visible;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .hero-banner[data-position="hidden"] {
   display: none;
@@ -55,16 +60,185 @@
   width: 100%;
   height: 100%;
   border-radius: inherit;
+  text-decoration: none;
 }
 .hero-link:focus-visible {
   outline-offset: -5px;
 }
-.hero-link img {
+.hero-media {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 1;
+  overflow: hidden;
+  border-radius: inherit;
+}
+.hero[data-format="phone"] .hero-media {
+  aspect-ratio: 3 / 2;
+}
+.hero[data-format="fallback"][data-has-video="true"] .hero-media {
+  border-radius: 12px;
+  background: var(--bt-surface-subtle);
+  box-shadow: var(--bt-shadow-raised);
+}
+.hero-media img,
+.hero-video {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
   object-position: center;
+}
+.hero-video {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.hero-video.is-visible {
+  opacity: 1;
+}
+.hero-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    rgb(0 0 0 / 0.55) 0%,
+    transparent 55%
+  );
+}
+.hero[data-format="phone"] .hero-scrim {
+  background: linear-gradient(
+    to top,
+    rgb(0 0 0 / 0.6) 0%,
+    transparent 55%
+  );
+}
+.hero-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  padding-inline: 6% 55%;
+  gap: 8px;
+  color: #fff;
+}
+.hero-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 100%;
+}
+.hero-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: 28px;
+  line-height: 34px;
+  font-weight: 700;
+}
+.hero-subtitle {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 400;
+}
+.hero-overlay .hero-title {
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+}
+.hero-overlay .hero-subtitle {
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+}
+.hero-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  height: 36px;
+  padding: 0 16px;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--bt-action);
+  font-size: 14px;
+  line-height: 1;
+  font-weight: 700;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.2);
+}
+.hero[data-format="phone"] .hero-overlay {
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 0;
+  inset: auto 16px 28px;
+  gap: 12px;
+}
+.hero[data-format="phone"] .hero-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 70%;
+}
+.hero[data-format="phone"] .hero-title {
+  font-size: 18px;
+  line-height: 22px;
+}
+.hero[data-format="phone"] .hero-subtitle {
+  font-size: 13px;
+  line-height: 17px;
+}
+.hero[data-format="phone"] .hero-cta {
+  height: 28px;
+  padding: 0 12px;
+  margin-top: 0;
+  font-size: 13px;
+}
+/* Reserved equal height below media in 3:1 fallback whenever a video banner exists (D-08). */
+.hero-below {
+  box-sizing: border-box;
+  height: 92px;
+  padding: 10px 2px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--bt-text);
+  overflow: hidden;
+}
+.hero-below .hero-title {
+  font-size: 16px;
+  line-height: 20px;
+}
+.hero-below .hero-subtitle {
+  font-size: 13px;
+  line-height: 17px;
+  color: var(--bt-text-muted);
+}
+.hero-chrome {
+  position: relative;
+  grid-area: 1 / 1;
+  align-self: start;
+  width: 100%;
+  aspect-ratio: 3 / 1;
+  z-index: 3;
+  pointer-events: none;
+}
+.hero[data-format="phone"] .hero-chrome {
+  aspect-ratio: 3 / 2;
+}
+.hero-chrome button {
+  pointer-events: auto;
 }
 .hero .hero-edge {
   position: absolute;
@@ -109,11 +283,16 @@
 .hero-previous span {
   margin-right: auto;
 }
-.hero .hero-rotation {
+.hero-top-controls {
   position: absolute;
   right: 12px;
   top: 12px;
   z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hero .hero-rotation {
   width: 28px;
   height: 28px;
   min-height: 0;
@@ -127,6 +306,27 @@
 }
 .hero .hero-rotation:hover {
   background: #fff;
+}
+.hero .hero-video-control {
+  width: 32px;
+  height: 28px;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 0.8);
+  border-radius: 8px;
+  background: var(--bt-action);
+  color: #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.25);
+}
+.hero .hero-video-control:hover:enabled {
+  background: var(--bt-action-hover);
+}
+.hero .hero-video-control:active:enabled {
+  background: var(--bt-action-active);
+}
+.hero .hero-video-control svg {
+  width: 14px;
+  height: 14px;
 }
 .hero-dots {
   position: absolute;
@@ -177,23 +377,27 @@
   border: 0;
 }
 @container hero (max-width: 700px) {
+  .hero-loading {
+    aspect-ratio: 3 / 2;
+    border-radius: 12px;
+  }
   .hero-banner {
     border-radius: 12px;
   }
   .hero .hero-edge {
     width: 32px;
   }
-  .hero .hero-rotation {
+  .hero-top-controls {
     right: 6px;
     top: 6px;
+    gap: 6px;
   }
   .hero-dots {
     bottom: 0;
   }
 }
 @media (max-width: 999px) {
-  .hero,
-  .hero-loading {
+  .hero {
     margin-bottom: 1.5rem;
   }
 }

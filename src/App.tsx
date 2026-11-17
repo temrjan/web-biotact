@@ -721,6 +721,7 @@ function CategoryRow({
 /** Mini App home order on the shared Shop data, then video, FAQ and consultation. */
 function Home({
   lang,
+  previewBanner,
   categories,
   retry,
   lines,
@@ -730,12 +731,20 @@ function Home({
 }: CardPurchases & {
   obscured: boolean;
   lang: api.Language;
+  previewBanner?: number;
   categories: Read<api.Category[]>;
   retry: () => void;
 }) {
   const t = copy[lang];
-  const promo = useRead(lang, (s) =>
-    Promise.all([api.banners(lang, s), api.bannerInterval(s)]),
+  const promo = useRead(`${lang}:${previewBanner ?? ""}`, (s) =>
+    previewBanner
+      ? Promise.all([
+          api
+            .bannerById(previewBanner, lang, s)
+            .then((item) => (item ? [item] : [])),
+          Promise.resolve(api.DEFAULT_BANNER_INTERVAL),
+        ])
+      : Promise.all([api.banners(lang, s), api.bannerInterval(s)]),
   );
   const sale = useRead(lang, (s) => api.saleProducts(lang, s));
   const saleSlider = useSlider({ hint: true });
@@ -744,7 +753,9 @@ function Home({
     <>
       <h1 className="visually-hidden">BIOTACT</h1>
       {promo.result.status === "loading" ? (
-        <div className="hero-stage hero-loading" aria-hidden="true" />
+        <div className="hero" aria-hidden="true">
+          <div className="hero-stage hero-loading" />
+        </div>
       ) : (
         promo.result.status === "ready" &&
         promo.result.data[0].length > 0 && (
@@ -1739,6 +1750,9 @@ export default function App() {
             <Home
               key={hash}
               lang={loc.lang}
+              {...(loc.previewBanner
+                ? { previewBanner: loc.previewBanner }
+                : {})}
               categories={cats.result}
               retry={cats.retry}
               lines={lines}

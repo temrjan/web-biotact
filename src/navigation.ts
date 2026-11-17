@@ -6,6 +6,7 @@ export interface Location {
   q?: string;
   page: number;
   id?: number;
+  previewBanner?: number;
 }
 function id(s: string | null): number | undefined {
   return s !== null && /^[1-9]\d*$/.test(s) && Number.isSafeInteger(Number(s))
@@ -18,7 +19,11 @@ export function parseLocation(hash: string): Location {
   const lang: Language = p.get("lang") === "uz" ? "uz" : "ru";
   const view = name || "home",
     base = { lang, page: 1 };
-  if (view === "home" || view === "account" || view === "order")
+  if (view === "home") {
+    const previewBanner = id(p.get("preview_banner"));
+    return { ...base, view, ...(previewBanner ? { previewBanner } : {}) };
+  }
+  if (view === "account" || view === "order")
     return { ...base, view };
   if (view === "product") {
     const value = id(p.get("id"));
@@ -84,6 +89,8 @@ export function bannerTarget(
 }
 export function href(loc: Location): string {
   const p = new URLSearchParams();
+  if (loc.view === "home" && loc.previewBanner)
+    p.set("preview_banner", String(loc.previewBanner));
   if (loc.view === "catalogue") {
     if (loc.category) p.set("category", String(loc.category));
     if (loc.q) p.set("q", loc.q);

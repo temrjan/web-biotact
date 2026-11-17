@@ -77,7 +77,22 @@ export const products = Array.from({ length: 45 }, (_, i) => ({
   additional_info: i === 0 ? "API information" : null,
   disclaimer: null as string | null,
 }));
-export const banners = [
+export interface FixtureBanner {
+  id: number;
+  title: string;
+  title_uz: string | null;
+  subtitle: string | null;
+  subtitle_uz: string | null;
+  image_url: string;
+  image_mobile_url?: string | null;
+  video_url?: string | null;
+  video_mobile_url?: string | null;
+  gradient: null;
+  link_url: string | null;
+  sort_order: number;
+  is_active: boolean;
+}
+export const banners: FixtureBanner[] = [
   {
     id: 6,
     title: "Баннер 4",
@@ -118,7 +133,8 @@ export const banners = [
 export interface Controls {
   categoryFailure?: "status" | "malformed";
   empty?: boolean;
-  banners: typeof banners;
+  banners: FixtureBanner[];
+  bannerById?: Record<number, FixtureBanner | null>;
   interval: string | null;
   requests: URL[];
 }
@@ -161,6 +177,20 @@ export async function fixture(
     await route.fulfill({
       json: { items: controls.banners, total: controls.banners.length },
     });
+  });
+  await page.route(/\/api\/v1\/banners\/([^/?]+)$/, async (route) => {
+    const u = new URL(route.request().url());
+    controls.requests.push(u);
+    const id = Number(u.pathname.split("/").pop());
+    const item =
+      controls.bannerById && id in controls.bannerById
+        ? controls.bannerById[id]
+        : (controls.banners.find((b) => b.id === id) ?? null);
+    if (!item) {
+      await route.fulfill({ status: 404, json: { detail: "Not found" } });
+      return;
+    }
+    await route.fulfill({ json: item });
   });
   await page.route("**/api/v1/settings/banner_interval", async (route) => {
     controls.requests.push(new URL(route.request().url()));

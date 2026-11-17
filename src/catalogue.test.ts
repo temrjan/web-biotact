@@ -152,6 +152,42 @@ test("hash contract restores identity/filter/page and URLSearchParams encodes li
     expect(parseLocation(s).view).toBe("invalid");
   expect(parseLocation("")).toEqual({ view: "home", lang: "ru", page: 1 });
 });
+test("preview_banner parameter accepts safe positive integers on home only and round-trips through href", () => {
+  for (const lang of ["ru", "uz"] as const) {
+    const parsed = parseLocation(`#home?preview_banner=12&lang=${lang}`);
+    expect(parsed).toEqual({
+      view: "home",
+      lang,
+      page: 1,
+      previewBanner: 12,
+    });
+    const encoded = href(parsed);
+    expect(encoded).toContain("preview_banner=12");
+    expect(encoded).toContain(`lang=${lang}`);
+    expect(parseLocation(encoded.replace(/^\/#/, "#"))).toEqual(parsed);
+  }
+  for (const raw of ["0", "-1", "1.5", "abc", "", "9007199254740992"]) {
+    expect(parseLocation(`#home?preview_banner=${raw}&lang=ru`)).toEqual({
+      view: "home",
+      lang: "ru",
+      page: 1,
+    });
+  }
+  expect(parseLocation("#catalogue?preview_banner=12&lang=uz")).toEqual({
+    view: "catalogue",
+    lang: "uz",
+    page: 1,
+  });
+  expect(parseLocation("#product?id=7&preview_banner=12&lang=ru")).toEqual({
+    view: "product",
+    id: 7,
+    lang: "ru",
+    page: 1,
+  });
+  expect(
+    href({ view: "catalogue", lang: "ru", page: 1, previewBanner: 12 }),
+  ).toBe("/#catalogue?page=1&lang=ru");
+});
 const adminBanner = {
   id: 6,
   title: "Баннер 4",
@@ -168,7 +204,13 @@ test("admin banners keep server order and language title; unusable images are sk
   expect(banner(adminBanner, "uz")).toEqual({
     id: 6,
     title: "Баннер 4",
+    title_uz: null,
+    subtitle: null,
+    subtitle_uz: null,
     image_url: "https://app.biotact.uz/uploads/banners/a.jpg",
+    image_mobile_url: null,
+    video_url: null,
+    video_mobile_url: null,
     link_url: "/catalog",
   });
   expect(banner({ ...adminBanner, title_uz: "Banner" }, "uz")?.title).toBe(
@@ -211,6 +253,68 @@ test("admin banners keep server order and language title; unusable images are sk
     new Response(JSON.stringify({ items: [adminBanner], total: 2 })),
   );
   await expect(banners("ru", new AbortController().signal)).rejects.toThrow();
+});
+test("banner parses new media fields safely without failing on unusable or absent values", () => {
+  const httpsCases = {
+    image_mobile_url: "https://app.biotact.uz/uploads/banners/m.jpg",
+    video_url: "https://app.biotact.uz/uploads/banners/wide.mp4",
+    video_mobile_url: "https://app.biotact.uz/uploads/banners/phone.mp4",
+  };
+  const valid = banner({ ...adminBanner, ...httpsCases }, "ru");
+  expect(valid).toMatchObject(httpsCases);
+
+  const withoutNewKeys = {
+    id: 11,
+    title: "Legacy banner",
+    title_uz: null,
+    image_url: "https://app.biotact.uz/uploads/banners/a.jpg",
+    link_url: null,
+    sort_order: 0,
+    is_active: true,
+  };
+  expect(banner(withoutNewKeys, "ru")).toEqual({
+    id: 11,
+    title: "Legacy banner",
+    title_uz: null,
+    subtitle: null,
+    subtitle_uz: null,
+    image_url: "https://app.biotact.uz/uploads/banners/a.jpg",
+    image_mobile_url: null,
+    video_url: null,
+    video_mobile_url: null,
+    link_url: null,
+  });
+
+  expect(
+    banner({ ...adminBanner, image_mobile_url: "/uploads/banners/m.jpg" }, "ru")
+      ?.image_mobile_url,
+  ).toBe("/uploads/banners/m.jpg");
+
+  for (const field of [
+    "image_mobile_url",
+    "video_url",
+    "video_mobile_url",
+  ] as const) {
+    for (const bad of [
+      "http://app.biotact.uz/a.mp4",
+      "https://user:pass@app.biotact.uz/a.mp4",
+      "javascript:alert(1)",
+      "//evil.test/a.mp4",
+      123,
+    ]) {
+      const parsed = banner({ ...adminBanner, [field]: bad }, "ru");
+      expect(parsed).not.toBeNull();
+      expect(parsed?.[field]).toBeNull();
+    }
+  }
+  for (const clipField of ["video_url", "video_mobile_url"] as const) {
+    const parsed = banner(
+      { ...adminBanner, [clipField]: "/uploads/banners/clip.mp4" },
+      "ru",
+    );
+    expect(parsed).not.toBeNull();
+    expect(parsed?.[clipField]).toBeNull();
+  }
 });
 test("banner interval uses the admin setting and the Mini App default otherwise", async () => {
   const signal = new AbortController().signal;

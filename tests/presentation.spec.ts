@@ -346,7 +346,7 @@ test("Product detail shares nonsized Add, quantity and removal with list, header
     requests.every(
       (r) =>
         r.method === "GET" &&
-        /^\/api\/v1\/(categories|products|products\/\d+|banners|settings\/banner_interval)$/.test(
+        /^\/api\/v1\/(categories|products|products\/\d+|banners|banners\/[1-9]\d*|settings\/banner_interval)$/.test(
           r.path,
         ),
     ),
@@ -964,7 +964,7 @@ test("accepted footer colors, size variants, availability and remembered basket 
     requests.every(
       (r) =>
         r.method === "GET" &&
-        /^\/api\/v1\/(categories|products|products\/\d+|banners|settings\/banner_interval)$/.test(
+        /^\/api\/v1\/(categories|products|products\/\d+|banners|banners\/[1-9]\d*|settings\/banner_interval)$/.test(
           r.path,
         ),
     ),
@@ -4128,4 +4128,443 @@ test("consultant says the context was reset only after «Начать занов
   await expect(status).toHaveText(
     "Контекст сброшен. Можно задать новый вопрос.",
   );
+});
+
+test("video banner User path D: loading order (D-13), phone format & fallback (D-08, D-11, D-12), video lifecycle (D-02, D-04, D-05, D-14), controls (W-01, W-02), UZ text & click (D-09)", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const win = window as Window & {
+      __videoCalls?: Array<{ type: "play" | "pause"; src: string }>;
+    };
+    win.__videoCalls = [];
+    HTMLMediaElement.prototype.play = function () {
+      win.__videoCalls?.push({
+        type: "play",
+        src: this.currentSrc || this.getAttribute("src") || "",
+      });
+      return Promise.resolve();
+    };
+    HTMLMediaElement.prototype.pause = function () {
+      win.__videoCalls?.push({
+        type: "pause",
+        src: this.currentSrc || this.getAttribute("src") || "",
+      });
+    };
+  });
+
+  const videoBanner = {
+    id: 21,
+    title: "Иммунитет",
+    title_uz: "Immunitet",
+    subtitle: "Ежедневная защита организма",
+    subtitle_uz: "Kundalik himoya",
+    image_url: "https://cdn.example.test/v1-wide.jpg",
+    image_mobile_url: "https://cdn.example.test/v1-phone.jpg",
+    video_url: "https://cdn.example.test/v1-wide.mp4",
+    video_mobile_url: "https://cdn.example.test/v1-phone.mp4",
+    gradient: null,
+    link_url: "/product/4004",
+    sort_order: 0,
+    is_active: true,
+  };
+  const imageBannerWithPhone = {
+    id: 22,
+    title: "Каталог",
+    title_uz: "Katalog",
+    subtitle: null,
+    subtitle_uz: null,
+    image_url: "https://cdn.example.test/img-wide.jpg",
+    image_mobile_url: "https://cdn.example.test/img-phone.jpg",
+    video_url: null,
+    video_mobile_url: null,
+    gradient: null,
+    link_url: "/catalog",
+    sort_order: 1,
+    is_active: true,
+  };
+
+  let holdFirstPhone = true;
+  let releaseFirstPhone: () => void = () => {};
+  const firstPhoneGate = new Promise<void>((resolve) => {
+    releaseFirstPhone = resolve;
+  });
+
+  const mediaRequests: string[] = [];
+  const pendingVideoRoutes: Array<() => Promise<void>> = [];
+
+  await page.route("https://cdn.example.test/**", async (route) => {
+    const url = route.request().url();
+    mediaRequests.push(url);
+    if (url.endsWith("/v1-phone.jpg") && holdFirstPhone) {
+      await firstPhoneGate;
+    }
+    if (url.endsWith(".jpg")) {
+      const mobile = url.includes("phone");
+      const w = mobile ? 1080 : 1920;
+      const h = mobile ? 720 : 640;
+      await route.fulfill({
+        status: 200,
+        contentType: "image/svg+xml",
+        headers: { "Cache-Control": "no-store" },
+        body: `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="#2e5a44"/></svg>`,
+      });
+      return;
+    }
+    // Keep synthetic MP4 fetches open in Playwright Chromium (no H.264 decoder)
+    // so media elements wait for test-dispatched events rather than raising decode errors.
+    await new Promise<void>((resolve) => {
+      pendingVideoRoutes.push(async () => {
+        await route.abort().catch(() => {});
+        resolve();
+      });
+    });
+  });
+
+  const clearPendingVideos = async () => {
+    while (pendingVideoRoutes.length > 0) {
+      const settle = pendingVideoRoutes.pop();
+      if (settle) await settle();
+    }
+  };
+
+  try {
+    const f = await fixture(page);
+    f.banners = [videoBanner, imageBannerWithPhone];
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.clock.install({ time: new Date("2030-01-01T00:00:00Z") });
+    await page.clock.pauseAt(new Date("2030-01-01T00:00:01Z"));
+
+    await page.goto("/#home?lang=ru");
+    await page.mouse.move(1, 1);
+
+    // D-13: while first still image is pending, no other banner image or clip is requested.
+    await expect.poll(() => mediaRequests).toContain(
+      "https://cdn.example.test/v1-phone.jpg",
+    );
+    expect(mediaRequests).toEqual(["https://cdn.example.test/v1-phone.jpg"]);
+
+    holdFirstPhone = false;
+    releaseFirstPhone();
+
+    // After first still resolves, second still (phone) and active phone clip follow; wide clip is never requested.
+    await expect.poll(() => mediaRequests).toContain(
+      "https://cdn.example.test/img-phone.jpg",
+    );
+    await expect.poll(() => mediaRequests).toContain(
+      "https://cdn.example.test/v1-phone.mp4",
+    );
+    expect(mediaRequests).not.toContain(
+      "https://cdn.example.test/v1-wide.mp4",
+    );
+    expect(mediaRequests).not.toContain(
+      "https://cdn.example.test/v1-wide.jpg",
+    );
+
+    const videoEl = page.locator(`${heroMain} video`);
+    await expect(videoEl).toHaveCount(1);
+    const props = await videoEl.evaluate((v: HTMLVideoElement) => ({
+      muted: v.muted,
+      playsInline: v.playsInline,
+      controls: v.controls,
+      poster: v.poster,
+      visibleClass: v.classList.contains("is-visible"),
+    }));
+    expect(props).toEqual({
+      muted: true,
+      playsInline: true,
+      controls: false,
+      poster: "https://cdn.example.test/v1-phone.jpg",
+      visibleClass: false,
+    });
+
+    // D-08, D-11: phone format height equals 2/3 of hero width.
+    const heroBox = await page.locator(".hero").boundingBox();
+    const mediaBox1 = await page.locator(`${heroMain} .hero-media`).boundingBox();
+    const bannerBox1 = await page.locator(heroMain).boundingBox();
+    if (!heroBox || !mediaBox1 || !bannerBox1)
+      throw new Error("Missing hero geometry in phone format");
+    expect(Math.abs(mediaBox1.height - (heroBox.width * 2) / 3)).toBeLessThanOrEqual(
+      1.5,
+    );
+
+    // Dispatch playing; D-05: interval must not advance while clip is playing.
+    await videoEl.dispatchEvent("playing");
+    await expect(videoEl).toHaveClass(/is-visible/);
+    await page.clock.runFor(6000);
+    await heroSlide(page, 21);
+
+    // W-01: .hero-rotation pause -> pause() observed, video control as play, no advance; resume -> clip resumes, control gone.
+    await page.locator(".hero-rotation").click();
+    await page.mouse.move(1, 1);
+    const pauseCalls = await page.evaluate(
+      () =>
+        (
+          window as Window & {
+            __videoCalls?: Array<{ type: string; src: string }>;
+          }
+        ).__videoCalls?.filter((c) => c.type === "pause").length ?? 0,
+    );
+    expect(pauseCalls).toBeGreaterThanOrEqual(1);
+    await expect(page.locator(".hero-video-control")).toHaveAccessibleName(
+      "Воспроизвести видео",
+    );
+    await page.clock.runFor(5000);
+    await heroSlide(page, 21);
+
+    await page.locator(".hero-rotation").click();
+    await page.mouse.move(1, 1);
+    await expect(page.locator(".hero-video-control")).toHaveCount(0);
+    await videoEl.dispatchEvent("playing");
+
+    // D-05: after ended + elapsed interval -> advances to image slide; D-08: equal 2/3 height on slide 2.
+    await videoEl.dispatchEvent("ended");
+    await page.clock.runFor(1);
+    await page.clock.runFor(280);
+    await heroSlide(page, 22);
+    // D-04: non-active video slide has no mounted <video>.
+    await expect(
+      page.locator('.hero-banner[data-banner-id="21"] video'),
+    ).toHaveCount(0);
+    const mediaBox2 = await page.locator(`${heroMain} .hero-media`).boundingBox();
+    const bannerBox2 = await page.locator(heroMain).boundingBox();
+    if (!mediaBox2 || !bannerBox2)
+      throw new Error("Missing slide 2 geometry in phone format");
+    expect(Math.abs(mediaBox2.height - (heroBox.width * 2) / 3)).toBeLessThanOrEqual(
+      1.5,
+    );
+    expect(Math.abs(bannerBox1.height - bannerBox2.height)).toBeLessThanOrEqual(
+      1.5,
+    );
+
+    // Image slide advances on interval back to video slide 21.
+    await page.clock.runFor(4000);
+    await page.clock.runFor(280);
+    await heroSlide(page, 21);
+
+    // D-05: short clip ending at 2000 ms holds until full 4000 ms interval elapses.
+    const videoEl2 = page.locator(`${heroMain} video`);
+    await videoEl2.dispatchEvent("playing");
+    await page.clock.runFor(2000);
+    await videoEl2.dispatchEvent("ended");
+    await heroSlide(page, 21);
+    await page.clock.runFor(1999);
+    await heroSlide(page, 21);
+    await page.clock.runFor(1);
+    await page.clock.runFor(280);
+    await heroSlide(page, 22);
+
+    // W-02: dot click to video slide -> video control is play, no play() called; tap -> pause; ended -> no advance & play again.
+    const playCountBeforeDot = await page.evaluate(
+      () =>
+        (
+          window as Window & {
+            __videoCalls?: Array<{ type: string }>;
+          }
+        ).__videoCalls?.filter((c) => c.type === "play").length ?? 0,
+    );
+    await page.locator(".hero-dot").first().click();
+    await page.clock.runFor(280);
+    await heroSlide(page, 21);
+    const playCountAfterDot = await page.evaluate(
+      () =>
+        (
+          window as Window & {
+            __videoCalls?: Array<{ type: string }>;
+          }
+        ).__videoCalls?.filter((c) => c.type === "play").length ?? 0,
+    );
+    expect(playCountAfterDot).toBe(playCountBeforeDot);
+    await expect(page.locator(".hero-video-control")).toHaveAccessibleName(
+      "Воспроизвести видео",
+    );
+
+    await page.locator(".hero-video-control").click();
+    await page.locator(`${heroMain} video`).dispatchEvent("playing");
+    await expect(page.locator(".hero-video-control")).toHaveAccessibleName(
+      "Пауза видео",
+    );
+    await page.locator(`${heroMain} video`).dispatchEvent("ended");
+    await page.clock.runFor(5000);
+    await heroSlide(page, 21);
+    await expect(page.locator(".hero-video-control")).toHaveAccessibleName(
+      "Воспроизвести видео",
+    );
+
+    // D-14: no playing within 4000 ms budget -> still image stays (never mounts clip after budget), advances on image timing.
+    await clearPendingVideos();
+    mediaRequests.length = 0;
+    f.interval = "6000";
+    await page.reload();
+    await page.mouse.move(1, 1);
+    await expect.poll(() => mediaRequests).toContain(
+      "https://cdn.example.test/v1-phone.mp4",
+    );
+    const budgetVideo = page.locator(`${heroMain} video`);
+    await expect(budgetVideo).toHaveCount(1);
+    await page.clock.runFor(4000);
+    await expect(page.locator(".hero-video-control")).toHaveCount(0);
+    await expect(page.locator(`${heroMain} video`)).toHaveCount(0);
+    await heroSlide(page, 21);
+    await page.clock.runFor(2000);
+    await page.clock.runFor(280);
+    await heroSlide(page, 22);
+    f.interval = "4000";
+
+    // D-08, D-09: Uzbek title in Uzbek and click opens banner link.
+    await clearPendingVideos();
+    await page.goto("/#home?lang=uz");
+    await heroSlide(page, 21);
+    await expect(page.locator(`${heroMain} .hero-title`)).toHaveText(
+      "Immunitet",
+    );
+    await page.locator(`${heroMain} a`).click();
+    await expect(page.locator(".product-main")).toHaveAttribute(
+      "data-product-id",
+      "4004",
+    );
+
+    // 3:1 fallback (image banner lacks image_mobile_url): wide media used and equal carousel height for both slides.
+    await clearPendingVideos();
+    mediaRequests.length = 0;
+    f.banners = [
+      videoBanner,
+      { ...imageBannerWithPhone, image_mobile_url: null },
+    ];
+    await page.goto("/#home?lang=ru");
+    await page.mouse.move(1, 1);
+    await expect(page.locator(".hero")).toHaveAttribute(
+      "data-format",
+      "fallback",
+    );
+    await expect.poll(() => mediaRequests).toContain(
+      "https://cdn.example.test/v1-wide.jpg",
+    );
+    await expect.poll(() => mediaRequests).toContain(
+      "https://cdn.example.test/v1-wide.mp4",
+    );
+    expect(mediaRequests).not.toContain(
+      "https://cdn.example.test/v1-phone.mp4",
+    );
+    await expect(page.locator(`${heroMain} .hero-cta`)).toHaveCount(0);
+    await expect(page.locator(`${heroMain} .hero-below .hero-title`)).toHaveText(
+      "Иммунитет",
+    );
+    const fallbackBox1 = await page.locator(heroMain).boundingBox();
+    await page.locator(`${heroMain} video`).dispatchEvent("playing");
+    await page.locator(`${heroMain} video`).dispatchEvent("ended");
+    await page.clock.runFor(4000);
+    await page.clock.runFor(280);
+    await heroSlide(page, 22);
+    const fallbackBox2 = await page.locator(heroMain).boundingBox();
+    if (!fallbackBox1 || !fallbackBox2)
+      throw new Error("Missing fallback geometry");
+    expect(
+      Math.abs(fallbackBox1.height - fallbackBox2.height),
+    ).toBeLessThanOrEqual(1.5);
+
+    // Wide layout (1440 px) with both phone pictures restored: wide rendition used.
+    await clearPendingVideos();
+    mediaRequests.length = 0;
+    f.banners = [videoBanner, imageBannerWithPhone];
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.reload();
+    await page.mouse.move(1, 1);
+    await expect(page.locator(".hero")).toHaveAttribute("data-format", "wide");
+    await expect.poll(() => mediaRequests).toContain(
+      "https://cdn.example.test/v1-wide.mp4",
+    );
+    await expect(page.locator(`${heroMain} .hero-cta`)).toHaveText("Подробнее");
+    await expect(page.locator(`${heroMain} a`)).toHaveAccessibleName(
+      "Иммунитет",
+    );
+  } finally {
+    await clearPendingVideos();
+  }
+});
+
+test("preview banner User path 2 (P-02): hidden banner preview in phone format across RU/UZ; unknown ID has no hero and no alert", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    HTMLMediaElement.prototype.play = function () {
+      return Promise.resolve();
+    };
+  });
+  const pendingVideos: Array<() => Promise<void>> = [];
+  await page.route("https://cdn.example.test/**", async (route) => {
+    const url = route.request().url();
+    if (url.endsWith(".jpg")) {
+      const mobile = url.includes("phone");
+      await route.fulfill({
+        status: 200,
+        contentType: "image/svg+xml",
+        body: `<svg xmlns="http://www.w3.org/2000/svg" width="${mobile ? 1080 : 1920}" height="${mobile ? 720 : 640}"><rect width="100%" height="100%" fill="#2e5a44"/></svg>`,
+      });
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      pendingVideos.push(async () => {
+        await route.abort().catch(() => {});
+        resolve();
+      });
+    });
+  });
+
+  try {
+    const f = await fixture(page);
+    f.bannerById = {
+      77: {
+        id: 77,
+        title: "Скрытый баннер",
+        title_uz: "Yashirin banner",
+        subtitle: "Предпросмотр до показа",
+        subtitle_uz: "Ko'rsatishdan oldin",
+        image_url: "https://cdn.example.test/p-wide.jpg",
+        image_mobile_url: "https://cdn.example.test/p-phone.jpg",
+        video_url: "https://cdn.example.test/p-wide.mp4",
+        video_mobile_url: "https://cdn.example.test/p-phone.mp4",
+        gradient: null,
+        link_url: "/catalog",
+        sort_order: 0,
+        is_active: false,
+      },
+      999: null,
+    };
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/#home?preview_banner=77&lang=ru");
+    await heroSlide(page, 77);
+    await expect(page.locator(".hero")).toHaveAttribute("data-format", "phone");
+    await expect(page.locator(`${heroMain} .hero-title`)).toHaveText(
+      "Скрытый баннер",
+    );
+    await expect(page.locator(".hero-dot, .hero-rotation")).toHaveCount(0);
+    await expect(page.locator(".hero-video-control")).toBeVisible();
+    expect(
+      f.requests.some((u) => u.pathname === "/api/v1/banners/77"),
+    ).toBe(true);
+    expect(f.requests.some((u) => u.pathname === "/api/v1/banners")).toBe(
+      false,
+    );
+
+    await chooseLanguage(page, "uz");
+    await expect(page).toHaveURL(/preview_banner=77/);
+    await expect(page).toHaveURL(/lang=uz/);
+    await heroSlide(page, 77);
+    await expect(page.locator(`${heroMain} .hero-title`)).toHaveText(
+      "Yashirin banner",
+    );
+
+    await page.goto("/#home?preview_banner=999&lang=ru");
+    await expect(page.locator('[data-category="product"] article')).toHaveCount(
+      40,
+    );
+    await expect(page.locator(".hero, .hero-loading")).toHaveCount(0);
+    await expect(page.locator("main [role=alert]")).toHaveCount(0);
+  } finally {
+    while (pendingVideos.length > 0) {
+      await pendingVideos.pop()?.();
+    }
+  }
 });

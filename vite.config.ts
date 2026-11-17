@@ -56,7 +56,7 @@ function publicCataloguePreview(): Plugin {
         };
         if (
           req.method !== "GET" ||
-          !/^\/api\/v1\/(categories|products|products\/[1-9]\d*|banners|settings\/banner_interval)$/.test(
+          !/^\/api\/v1\/(categories|products|products\/[1-9]\d*|banners|banners\/[1-9]\d*|settings\/banner_interval)$/.test(
             path,
           )
         ) {

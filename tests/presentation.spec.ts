@@ -38,7 +38,7 @@ async function greenFocus(control: Locator) {
   await control.focus();
   await expect(control).toBeFocused();
   expect(await control.evaluate((e) => e.matches(":focus-visible"))).toBe(true);
-  await expect(control).toHaveCSS("outline-color", "rgb(12, 61, 43)");
+  await expect(control).toHaveCSS("outline-color", "rgb(1, 82, 52)");
   await expect(control).toHaveCSS("outline-width", "2px");
   await expect(control).toHaveCSS("outline-style", "solid");
 }
@@ -57,7 +57,7 @@ async function productAddFocus(page: Page) {
   await expect(add).toBeFocused();
   expect(await add.evaluate((e) => e.matches(":focus-visible"))).toBe(true);
   await expect(add).toHaveCSS("outline-style", "none");
-  await expect(frame).toHaveCSS("outline-color", "rgb(12, 61, 43)");
+  await expect(frame).toHaveCSS("outline-color", "rgb(1, 82, 52)");
   await expect(frame).toHaveCSS("outline-width", "2px");
   await expect(frame).toHaveCSS("outline-style", "solid");
   await expect(frame).toHaveCSS("outline-offset", "3px");
@@ -194,7 +194,7 @@ async function plainAll(
   await expect(link).toHaveText(text);
   await expect(link).toHaveAttribute("href", target);
   await expect(link).not.toHaveAttribute("aria-controls");
-  await expect(link).toHaveCSS("color", "rgb(12, 61, 43)");
+  await expect(link).toHaveCSS("color", "rgb(1, 82, 52)");
   await expect(link).toHaveCSS("font-size", "17px");
   await expect(link).toHaveCSS("font-weight", "700");
   await expect(link.locator("svg")).toHaveCount(1);
@@ -594,7 +594,7 @@ test("product page first Add is brand green, pale green while disabled; pressed 
       },
     });
   });
-  const green = "rgb(12, 61, 43)",
+  const green = "rgb(1, 82, 52)",
     white = "rgb(255, 255, 255)",
     text = "rgb(46, 37, 33)",
     transparent = "rgba(0, 0, 0, 0)";
@@ -626,9 +626,9 @@ test("product page first Add is brand green, pale green while disabled; pressed 
     await expect(add).toHaveCSS("color", white);
     await expect(add.locator("svg")).toHaveCSS("color", white);
     await add.hover();
-    await expect(add).toHaveCSS("background-color", "rgb(41, 84, 68)");
+    await expect(add).toHaveCSS("background-color", "rgb(31, 103, 76)");
     await page.mouse.down();
-    await expect(add).toHaveCSS("background-color", "rgb(11, 54, 38)");
+    await expect(add).toHaveCSS("background-color", "rgb(1, 72, 46)");
     await page.mouse.move(0, 0);
     await page.mouse.up();
     await expect(add).toHaveCSS("background-color", green);
@@ -1222,7 +1222,7 @@ test("AI draft stays local until explicit send and resets on semantic navigation
   await expect(panel).not.toContainText("PRIVATE_CUSTOMER_123");
   const primary = page.locator(".account button");
   await primary.hover();
-  await expect(primary).toHaveCSS("background-color", "rgb(41, 84, 68)");
+  await expect(primary).toHaveCSS("background-color", "rgb(31, 103, 76)");
   await expect(primary).toHaveCSS("color", "rgb(255, 255, 255)");
   const accountBaseline = requests.length;
   await panel.getByRole("textbox").fill("only local");
@@ -1818,7 +1818,7 @@ test("Home sections: sale, Mini App category rows, lazy video, FAQ accordion, co
   ]);
   for (const link of await footer.locator("a").all()) {
     await expect(link).toHaveCSS("text-decoration-line", "none");
-    await expect(link).toHaveCSS("color", "rgb(12, 61, 43)");
+    await expect(link).toHaveCSS("color", "rgb(1, 82, 52)");
   }
   await keyboardFocus(footer.locator("a").first());
   await expect(footer).toContainText("Фаробий");
@@ -2482,7 +2482,7 @@ test("Home rows scroll with one stepper-style row control and no scrollbar; cata
   const tabs = page.locator(".filter-row a");
   const current = page.locator('.filter-row a[aria-current="page"]');
   await expect(current).toHaveText("Нутриенты");
-  await expect(current).toHaveCSS("color", "rgb(12, 61, 43)");
+  await expect(current).toHaveCSS("color", "rgb(1, 82, 52)");
   await expect(current).toHaveCSS("text-decoration-line", "underline");
   for (const tab of [current, tabs.first()]) {
     await expect(tab).toHaveCSS("border-top-style", "none");
@@ -2855,7 +2855,7 @@ async function categoryMenu(menu: Locator) {
   ]);
   for (const m of marks) {
     expect(m.size).toEqual([20, 20]);
-    expect(m.colour).toBe("rgb(12, 61, 43)");
+    expect(m.colour).toBe("rgb(1, 82, 52)");
   }
   expect(marks.map((m) => m.divider)).toEqual([
     null,
@@ -3019,7 +3019,7 @@ async function headerIcon(icon: Locator, name: string) {
   await expect(icon).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(icon).toHaveCSS("box-shadow", "none");
   await expect(icon).toHaveCSS("border-top-width", "0px");
-  await expect(icon).toHaveCSS("color", "rgb(12, 61, 43)");
+  await expect(icon).toHaveCSS("color", "rgb(1, 82, 52)");
   await expect(icon.locator("svg")).toHaveCount(1);
 }
 

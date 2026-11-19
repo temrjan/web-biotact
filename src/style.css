@@ -1,3 +1,4 @@
+@import "./fonts.css";
 @import "./tokens.css";
 @import "./account.css";
 :root {
@@ -73,7 +74,8 @@ p {
 }
 h1,
 h2 {
-  font-weight: 400;
+  font-weight: var(--bt-font-weight-strong);
+  font-stretch: condensed;
   line-height: 1.2;
 }
 h1 {

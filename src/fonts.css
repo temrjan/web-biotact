@@ -1,0 +1,53 @@
+/* Self-hosted Open Sans variable subset (OFL 1.1, see assets/fonts/). */
+@font-face {
+  font-family: "Open Sans";
+  src: url("./assets/fonts/opensans.woff2") format("woff2");
+  font-weight: 300 800;
+  font-stretch: 75% 100%;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Arial / Liberation Sans metric fallbacks sized to Open Sans (desktop & Linux CI swap mitigation). */
+@font-face {
+  font-family: "Open Sans Fallback";
+  src:
+    local("Arial"), local("ArialMT"), local("Liberation Sans"),
+    local("LiberationSans"), local("Arimo");
+  font-weight: 100 599;
+  font-stretch: 88% 125%;
+  size-adjust: 104%;
+  ascent-override: 102.8%;
+  descent-override: 28.2%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: "Open Sans Fallback";
+  src:
+    local("Arial Bold"), local("Arial-BoldMT"), local("Liberation Sans Bold"),
+    local("LiberationSans-Bold"), local("Arimo Bold"), local("Arial"),
+    local("ArialMT"), local("Liberation Sans"), local("LiberationSans"),
+    local("Arimo");
+  font-weight: 600 900;
+  font-stretch: 88% 125%;
+  size-adjust: 104%;
+  ascent-override: 102.8%;
+  descent-override: 28.2%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: "Open Sans Fallback";
+  src:
+    local("Arial Bold"), local("Arial-BoldMT"), local("Liberation Sans Bold"),
+    local("LiberationSans-Bold"), local("Arimo Bold"), local("Arial"),
+    local("ArialMT"), local("Liberation Sans"), local("LiberationSans"),
+    local("Arimo");
+  font-weight: 600 900;
+  font-stretch: 75% 87.9%;
+  size-adjust: 80.5%;
+  ascent-override: 132.8%;
+  descent-override: 36.4%;
+  line-gap-override: 0%;
+}

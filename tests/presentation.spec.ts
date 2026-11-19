@@ -4845,3 +4845,75 @@ test("F-03 regression (D-05, D-07a): mid-play media error advances at banner int
     }
   }
 });
+
+// T-S3-1 (R-F03, R-F05, R-F06, R-F08, R-S3-04): a broken font path, a missing
+// preload `crossorigin` or a stripped `font-stretch` falls back silently to
+// Arial or normal width while `vite build` still passes.
+test("T-S3-1: Open Sans loads once for normal body text and Condensed Bold headings", async ({
+  page,
+}) => {
+  await fixture(page);
+  const fontRequests: string[] = [],
+    fontResponses: { status: number; type: string }[] = [],
+    preloadWarnings: string[] = [];
+  const isFont = (url: string) =>
+    /\/opensans[^/]*\.woff2$/.test(new URL(url).pathname);
+  page.on("request", (r) => {
+    if (isFont(r.url())) fontRequests.push(r.url());
+  });
+  page.on("response", (r) => {
+    if (isFont(r.url()))
+      fontResponses.push({
+        status: r.status(),
+        type: r.headers()["content-type"] ?? "",
+      });
+  });
+  page.on("console", (message) => {
+    if (/preload/i.test(message.text())) preloadWarnings.push(message.text());
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/#catalogue?page=1&lang=ru");
+  const heading = page.locator("h1").filter({ visible: true });
+  await expect(heading).toHaveCount(1);
+  // Step 1: the one variable face is loaded with its full axes.
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        await document.fonts.ready;
+        return [...document.fonts]
+          .filter((face) => face.family.replace(/"/g, "") === "Open Sans")
+          .map(({ weight, stretch, style, status }) => ({
+            weight,
+            stretch,
+            style,
+            status,
+          }));
+      }),
+    )
+    .toEqual([
+      {
+        weight: "300 800",
+        stretch: "75% 100%",
+        style: "normal",
+        status: "loaded",
+      },
+    ]);
+  // Step 2: the preload and the @font-face share one 200 font/woff2 download.
+  await expect.poll(() => fontResponses.length).toBe(fontRequests.length);
+  expect(fontRequests).toHaveLength(1);
+  expect(fontResponses).toHaveLength(1);
+  expect(fontResponses[0]?.status).toBe(200);
+  expect(fontResponses[0]?.type).toContain("font/woff2");
+  expect(preloadWarnings).toEqual([]);
+  // Step 3: Condensed Bold headings, normal-width body, Open Sans first.
+  await expect(heading).toHaveCSS("font-weight", "700");
+  await expect(heading).toHaveCSS("font-stretch", "75%");
+  for (const node of [page.locator(":root"), page.locator("body")])
+    expect(await node.evaluate((n) => getComputedStyle(n).fontFamily)).toMatch(
+      /^"Open Sans", "Open Sans Fallback", /,
+    );
+  await expect(page.locator("body")).toHaveCSS("font-stretch", "100%");
+  await expect(
+    page.locator(".product-grid .card-copy h3").first(),
+  ).toHaveCSS("font-stretch", "100%");
+});

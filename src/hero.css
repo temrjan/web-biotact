@@ -377,8 +377,9 @@
   border: 0;
 }
 @container hero (max-width: 700px) {
+  /* Deviation from video-banners W-04 (brandbook-conformity D-10): 3:1 while production banners have no phone pictures. Restore 3 / 2 at the banner switch-on. */
   .hero-loading {
-    aspect-ratio: 3 / 2;
+    aspect-ratio: 3 / 1;
     border-radius: 12px;
   }
   .hero-banner {

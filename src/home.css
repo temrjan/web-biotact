@@ -16,11 +16,23 @@
   white-space: nowrap;
   border: 0;
 }
-/* Mini App sliders: four cards visible on desktop, two on compact screens. */
+/*
+ * Mini App sliders: four cards visible on desktop, two on compact screens.
+ * Whole product names (S5): a card's name box, its width less the card text
+ * padding (2.75rem here, 16px on phones), is never narrower than
+ * --bt-card-name-min, so a row shows fewer cards where it would be. In
+ * clamp(N-up, (minimum card - N-up) * 1000000, fewer-up) the middle term is
+ * negative while N cards are wide enough, giving the N-up width, and huge
+ * otherwise, giving the fewer-up width.
+ */
 .product-row {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: calc((100% - 3 * 1.5rem) / 4);
+  grid-auto-columns: clamp(
+    (100% - 3 * 1.5rem) / 4,
+    (var(--bt-card-name-min) + 2.75rem - (100% - 3 * 1.5rem) / 4) * 1000000,
+    (100% - 2 * 1.5rem) / 3
+  );
   gap: 1.5rem;
   overflow-x: auto;
   overscroll-behavior-x: contain;
@@ -39,12 +51,20 @@
   scroll-snap-align: start;
 }
 .assistant-open .product-row {
-  grid-auto-columns: calc((100% - 1.5rem) / 2);
+  grid-auto-columns: clamp(
+    (100% - 1.5rem) / 2,
+    (var(--bt-card-name-min) + 2.75rem - (100% - 1.5rem) / 2) * 1000000,
+    100%
+  );
 }
 /* From 1440px three whole cards stay in view beside the open assistant. */
 @media (min-width: 1440px) {
   .assistant-open .product-row {
-    grid-auto-columns: calc((100% - 2 * 1.5rem) / 3);
+    grid-auto-columns: clamp(
+      (100% - 2 * 1.5rem) / 3,
+      (var(--bt-card-name-min) + 2.75rem - (100% - 2 * 1.5rem) / 3) * 1000000,
+      (100% - 1.5rem) / 2
+    );
   }
 }
 /* Row header: title on the left, the row control on the right. */
@@ -334,9 +354,14 @@
   .home-section {
     margin-top: 2rem;
   }
+  /* One card of 80% where two would be too narrow; the next one peeks out. */
   .product-row,
   .assistant-open .product-row {
-    grid-auto-columns: calc((100% - 1rem) / 2);
+    grid-auto-columns: clamp(
+      (100% - 1rem) / 2,
+      (var(--bt-card-name-min) + 2.75rem - (100% - 1rem) / 2) * 1000000,
+      80%
+    );
     gap: 1rem;
   }
   /* A row shifted by the phone hint (M6) stays where it stopped. */
@@ -349,8 +374,13 @@
   .footer-companies {
     grid-template-columns: minmax(0, 1fr);
   }
-  .product-row {
+  .product-row,
+  .assistant-open .product-row {
     gap: 0.75rem;
-    grid-auto-columns: calc((100% - 0.75rem) / 2);
+    grid-auto-columns: clamp(
+      (100% - 0.75rem) / 2,
+      (var(--bt-card-name-min) + 16px - (100% - 0.75rem) / 2) * 1000000,
+      80%
+    );
   }
 }

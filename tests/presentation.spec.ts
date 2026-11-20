@@ -1,5 +1,10 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import { fixture, products, visibleCards } from "./catalogue.fixture";
+import {
+  fixture,
+  products,
+  rootFontSize,
+  visibleCards,
+} from "./catalogue.fixture";
 import { BASKET_STORAGE_KEY } from "../src/guestBasket";
 
 const firstCard = '[data-product-id="4001"]';
@@ -1254,7 +1259,10 @@ test("AI adapts at 1440/1000/390/320 and enlarged text, modal focus/resize/menu/
     await page.goto("/");
     const row = page.locator('[data-category="product"] .product-row');
     await expect(row.locator("article")).toHaveCount(40);
-    expect(await visibleCards(row)).toBe(width >= 1000 ? 4 : 2);
+    // S5 (R-S5-04, R-S5-05): 3 cards at 1000px, one card of 80% at 320px.
+    expect(await visibleCards(row)).toBe(
+      { 1440: 4, 1000: 3, 390: 2, 320: 1 }[width],
+    );
     await page.locator(width >= 1000 ? ".sidebar .ai-nav" : ".top-ai").click();
     await dialogCount(page, 1);
     expect(
@@ -2782,6 +2790,96 @@ test("phone row hint plays once per site visit: back on Home by link, menu or Ba
   expect(await page.evaluate(() => "sameVisit" in window)).toBe(true);
   await shifts();
 });
+
+// Where two cards would leave a name box below the minimum, a phone home row
+// shows one card of about 80% with the next one peeking, and the hint leaves
+// it at the start; rows of two cards keep the hint.
+for (const [width, root, one] of [
+  [320, 100, true],
+  [350, 125, true],
+  [340, 100, false],
+  [351, 125, false],
+] as const)
+  for (const random of [0, 0.999])
+    test(`T-S5-2 (R-S5-05): ${one ? "one card of about 80% with the next peeking, no hint" : "two cards, the hint plays"} at ${width}px, root ${root}%, Math.random ${random}`, async ({
+      page,
+    }) => {
+      await fixture(page);
+      if (root !== 100) await rootFontSize(page, root);
+      await page.addInitScript((value) => {
+        Math.random = () => value;
+      }, random);
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto("/");
+      const row = page.locator('[data-category="product"] .product-row');
+      await expect(row.locator("article")).toHaveCount(40);
+      const state = () =>
+        row.evaluate((node) => {
+          const box = node.getBoundingClientRect(),
+            style = getComputedStyle(node),
+            content =
+              box.width -
+              parseFloat(style.paddingLeft) -
+              parseFloat(style.paddingRight),
+            right = Math.min(box.right, innerWidth),
+            [first, next] = [...node.children].map((card) =>
+              card.getBoundingClientRect(),
+            );
+          return {
+            share: (first?.width ?? 0) / content,
+            // The second card starts inside the visible row and ends beyond it.
+            peeks: !!next && next.left < right - 1 && next.right > right + 1,
+            left: node.scrollLeft,
+            hint: node.hasAttribute("data-hint"),
+            snap: style.scrollSnapType,
+          };
+        });
+      /** Waits until the row stops moving. */
+      async function settled() {
+        let previous = -1,
+          current = (await state()).left;
+        while (current !== previous) {
+          await page.waitForTimeout(150);
+          previous = current;
+          current = (await state()).left;
+        }
+      }
+      const before = await state();
+      if (one) {
+        expect(before.share).toBeGreaterThanOrEqual(0.75);
+        expect(before.share).toBeLessThanOrEqual(0.85);
+        expect(before.peeks).toBe(true);
+        expect(await visibleCards(row)).toBe(1);
+      } else {
+        expect(before.share).toBeLessThan(0.5);
+        expect(await visibleCards(row)).toBe(2);
+      }
+      // The row comes into view; the hint delay (at most 600ms) passes.
+      await row.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(1500);
+      const after = await state();
+      if (one)
+        expect(after).toMatchObject({
+          left: 0,
+          hint: false,
+          snap: "x mandatory",
+        });
+      else expect(after).toMatchObject({ hint: true, snap: "none" });
+      if (!one) expect(after.left).toBeGreaterThan(0);
+      await settled();
+      expect(await visibleCards(row)).toBeGreaterThanOrEqual(1);
+      if (!one) return;
+      // One swipe stops with one whole card in view.
+      const box = await row.boundingBox();
+      await page.mouse.move(
+        (box?.x ?? 0) + (box?.width ?? 0) / 2,
+        (box?.y ?? 0) + (box?.height ?? 0) / 2,
+      );
+      await page.mouse.wheel(150, 0);
+      await expect.poll(async () => (await state()).left).toBeGreaterThan(0);
+      await settled();
+      expect(await visibleCards(row)).toBe(1);
+    });
 
 test("side menu shows no per-item loading or error text; the page keeps its own retry", async ({
   page,

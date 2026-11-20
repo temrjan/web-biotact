@@ -1,5 +1,10 @@
-import { test, expect } from "@playwright/test";
-import { fixture, products, visibleCards } from "./catalogue.fixture";
+import { test, expect, type Page } from "@playwright/test";
+import {
+  fixture,
+  products,
+  rootFontSize,
+  visibleCards,
+} from "./catalogue.fixture";
 
 test("complete discovery, complete Home rows, server paging/search and canonical native links", async ({
   page,
@@ -471,7 +476,10 @@ test("responsive cards, gallery and drawer keyboard remain usable at wide, 390 a
     await page.goto("/");
     const row = page.locator('[data-category="product"] .product-row');
     await expect(row.locator("article")).toHaveCount(40);
-    expect(await visibleCards(row)).toBe(width === 1440 ? 4 : 2);
+    // S5 (R-S5-05): one card of 80% at 320px.
+    expect(await visibleCards(row)).toBe(
+      width === 1440 ? 4 : width === 320 ? 1 : 2,
+    );
     const media = page.locator(".card-media").first();
     const size = await media.boundingBox();
     expect(Math.abs((size?.width || 0) - (size?.height || 0))).toBeLessThan(1);
@@ -506,13 +514,14 @@ test("responsive cards, gallery and drawer keyboard remain usable at wide, 390 a
       await expect(page.getByRole("dialog")).not.toBeVisible();
     } else await page.goto("/#catalogue");
     await expect(page.locator("article")).toHaveCount(20);
+    // S5 (R-S5-04): one column at 320px.
     expect(
       await page
         .locator(".product-grid")
         .evaluate(
           (e) => getComputedStyle(e).gridTemplateColumns.split(" ").length,
         ),
-    ).toBe(width === 1440 ? 3 : 2);
+    ).toBe(width === 1440 ? 3 : width === 320 ? 1 : 2);
     await expect(page.locator('[data-product-id="4002"]')).toContainText(
       "Недоступен для покупки",
     );
@@ -606,4 +615,257 @@ test("every home category row reads all server pages of its category; a failed l
   const saleImage = page.locator('[data-category="sale"] img');
   await expect(saleImage).toHaveCount(1);
   expect(await saleImage.getAttribute("loading")).toBeNull();
+});
+
+/** Real catalogue names with the widest words, a hyphenated and a short name (S5). */
+const wholeNames = [
+  ["OPHTALMOCOMPLEX®", "OPHTALMOCOMPLEX®"],
+  ["IMMUNOCOMPLEX® KIDS", "IMMUNOCOMPLEX® KIDS"],
+  ["IMMUNOCOMPLEX®", "IMMUNOCOMPLEX®"],
+  ["DERMACOMPLEX®", "DERMACOMPLEX®"],
+  [
+    'Сет "Спорт: поддержка и восстановление"',
+    'To‘plam "Sport: madad va tiklanish"',
+  ],
+  [
+    "Компактная сумка-органайзер серая Healthy Lifestyle",
+    "Healthy Lifestyle Kulrang ixcham sumka-organayzer",
+  ],
+  [
+    'Сет "Офис: поддержка и защита здоровья"',
+    'To‘plam "Ofis: sogliqni qo‘llab-quvvatlash va uni himoya qilish"',
+  ],
+  ["BIFOLAK® NEO", "BIFOLAK® NEO"],
+] as const;
+const wholeNameProducts = wholeNames.map(([ru], i) => ({
+  ...products[4 + i]!,
+  name: ru,
+  is_sale: i === 0,
+  sale_price: i === 0 ? "98765.43" : null,
+}));
+const wholeNamesUz = Object.fromEntries(
+  wholeNames.map(([, uz], i) => [wholeNameProducts[i]!.id, uz]),
+);
+/** Smallest name box (R-S5-04): the widest word at the 12px floor, plus 1px. */
+const NAME_BOX_MIN = 132;
+/** Cards in view and catalogue columns by width and root size (spec r2 §5 table). */
+function wholeNameLayout(width: number, root: number) {
+  const two = width >= (root === 100 ? 340 : 351);
+  if (width <= 600) return { columns: two ? 2 : 1, cards: two ? 2 : 1 };
+  if (width <= 999) return { columns: 2, cards: 2 };
+  return { columns: 3, cards: width >= (root === 100 ? 1056 : 1188) ? 4 : 3 };
+}
+/**
+ * Every product card name as rendered (R-S5-01, 02, 04, 06). A part (a word,
+ * cut after a hyphen or slash) is split when two of its characters sit on
+ * different lines. Whether a name would fit at another size is judged on a
+ * copy of it rendered at that size in the same card.
+ */
+function nameProblems(page: Page) {
+  return page.evaluate((boxMin) => {
+    const ends = new Set(["-", "‐", "/"]);
+    /** Parts split across lines, and characters outside the name box. */
+    function render(h3: HTMLElement) {
+      const chars: { ch: string; rect: DOMRect | undefined }[] = [];
+      const walker = document.createTreeWalker(h3, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const text = node.textContent ?? "";
+        for (let i = 0; i < text.length; i++) {
+          const range = document.createRange();
+          range.setStart(node, i);
+          range.setEnd(node, i + 1);
+          chars.push({ ch: text[i]!, rect: range.getClientRects()[0] });
+        }
+      }
+      const box = h3.getBoundingClientRect();
+      const split: string[] = [];
+      for (let i = 1; i < chars.length; i++) {
+        const a = chars[i - 1]!,
+          b = chars[i]!;
+        if (/\s/.test(a.ch) || /\s/.test(b.ch) || ends.has(a.ch)) continue;
+        if (a.rect && b.rect && Math.abs(a.rect.top - b.rect.top) > 2)
+          split.push(`${a.ch}|${b.ch}`);
+      }
+      const outside = chars.some(
+        ({ ch, rect }) =>
+          !/\s/.test(ch) &&
+          (!rect || rect.left < box.left - 0.5 || rect.right > box.right + 0.5),
+      );
+      return { split, outside };
+    }
+    /** Whether the name rendered at `size` keeps every part whole in its box. */
+    function fitsAt(h3: HTMLElement, size: number) {
+      const copy = h3.cloneNode(true) as HTMLElement;
+      copy.style.fontSize = `${size}px`;
+      h3.after(copy);
+      const { split, outside } = render(copy);
+      copy.remove();
+      return !split.length && !outside;
+    }
+    const root = parseFloat(
+      getComputedStyle(document.documentElement).fontSize,
+    );
+    const base = root * (innerWidth <= 600 ? 0.9375 : 1.0625);
+    const names = [
+      ...document.querySelectorAll<HTMLElement>(".product-card .card-copy h3"),
+    ];
+    const problems: string[] = [];
+    for (const h3 of names) {
+      const name = h3.textContent ?? "",
+        style = getComputedStyle(h3),
+        size = parseFloat(style.fontSize),
+        width = h3.getBoundingClientRect().width;
+      const { split, outside } = render(h3);
+      const say = (what: string) =>
+        problems.push(`${name} @${size}px in ${width}px: ${what}`);
+      // R-S5-01: no part breaks inside.
+      if (split.length) say(`split ${split.join(" ")}`);
+      // R-S5-06: complete, not clipped, not clamped.
+      if (outside || h3.scrollWidth > h3.clientWidth) say("overflows its box");
+      if (style.webkitLineClamp !== "none" || style.textOverflow === "ellipsis")
+        say("clamped");
+      // R-S5-04: never narrower than the minimum name box.
+      if (width < boxMin - 1 / 64) say(`box below ${boxMin}px`);
+      // R-S5-02/03: base size while it fits; else the largest fitting size
+      // within 1px, not below the 12px floor.
+      if (fitsAt(h3, base)) {
+        if (Math.abs(size - base) > 0.01) say(`fits at base ${base}px`);
+      } else if (size < 12 || size >= base) say(`not reduced from ${base}px`);
+      else if (fitsAt(h3, Math.min(size + 1, base)))
+        say(`fits at ${size + 1}px`);
+    }
+    return { names: names.length, problems };
+  }, NAME_BOX_MIN);
+}
+/** Names and layout of Home rows or the catalogue grid at the current state. */
+async function wholeNamesHold(
+  page: Page,
+  view: "home" | "catalogue",
+  width: number,
+  root: number,
+) {
+  const layout = wholeNameLayout(width, root);
+  await expect
+    .poll(() => nameProblems(page))
+    .toEqual({
+      names: view === "home" ? wholeNames.length + 1 : wholeNames.length,
+      problems: [],
+    });
+  if (view === "home")
+    expect(
+      await visibleCards(
+        page.locator('[data-category="product"] .product-row'),
+      ),
+    ).toBe(layout.cards);
+  else
+    expect(
+      await page
+        .locator(".product-grid")
+        .evaluate(
+          (e) => getComputedStyle(e).gridTemplateColumns.split(" ").length,
+        ),
+    ).toBe(layout.columns);
+}
+async function openWholeNames(
+  page: Page,
+  view: "home" | "catalogue",
+  lang: string,
+) {
+  await page.goto(`/#${view}?lang=${lang}`);
+  await expect(page.locator(".product-card")).toHaveCount(
+    view === "home" ? wholeNames.length + 1 : wholeNames.length,
+  );
+  await page.evaluate(() => document.fonts.ready);
+}
+async function wholeNamesFixture(page: Page) {
+  await fixture(page, wholeNameProducts, wholeNamesUz);
+  // The row hint (M6) is not under test here; its rows stay at the start.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+}
+
+for (const [root, widths] of [
+  [100, [320, 339, 340, 375, 390, 600, 601, 1000, 1056]],
+  [125, [350, 351, 360, 390, 601, 1000, 1187, 1188, 1440]],
+] as const)
+  for (const width of widths)
+    test(`T-S5-1 (R-S5-01, 02, 04, 06): whole product names in Home rows and the catalogue, RU and UZ, ${width}px at root ${root}%`, async ({
+      page,
+    }) => {
+      await wholeNamesFixture(page);
+      if (root !== 100) await rootFontSize(page, root);
+      await page.setViewportSize({ width, height: 900 });
+      for (const lang of ["ru", "uz"])
+        for (const view of ["home", "catalogue"] as const) {
+          await openWholeNames(page, view, lang);
+          await wholeNamesHold(page, view, width, root);
+        }
+    });
+
+test("T-S5-1 (R-S5-03): names follow resize across 600px and 1000px and root 100 → 125 % without a reload", async ({
+  page,
+}) => {
+  await wholeNamesFixture(page);
+  await page.setViewportSize({ width: 360, height: 900 });
+  for (const view of ["home", "catalogue"] as const) {
+    await openWholeNames(page, view, "ru");
+    await page.evaluate(() => Object.assign(window, { sameDocument: true }));
+    for (const width of [360, 768, 360, 1440, 1000]) {
+      await page.setViewportSize({ width, height: 900 });
+      await wholeNamesHold(page, view, width, 100);
+    }
+    for (const width of [1000, 360]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.evaluate(() =>
+        document.documentElement.style.setProperty("font-size", "125%"),
+      );
+      await wholeNamesHold(page, view, width, 125);
+      await page.evaluate(() =>
+        document.documentElement.style.removeProperty("font-size"),
+      );
+      await wholeNamesHold(page, view, width, 100);
+    }
+    expect(await page.evaluate(() => "sameDocument" in window)).toBe(true);
+  }
+});
+
+test("T-S5-1 (R-S5-03): names follow a language switch RU → UZ without a reload", async ({
+  page,
+}) => {
+  await wholeNamesFixture(page);
+  await page.setViewportSize({ width: 360, height: 900 });
+  await openWholeNames(page, "catalogue", "ru");
+  await page.evaluate(() => Object.assign(window, { sameDocument: true }));
+  await wholeNamesHold(page, "catalogue", 360, 100);
+  await page.locator(".menu-toggle").click();
+  await page.locator('.languages [lang="uz"]').click();
+  await expect(page.locator(".product-card h3").nth(6)).toHaveText(
+    wholeNames[6][1],
+  );
+  await wholeNamesHold(page, "catalogue", 360, 100);
+  expect(await page.evaluate(() => "sameDocument" in window)).toBe(true);
+});
+
+test("T-S5-1 (R-S5-03): names are fitted again when Open Sans replaces the fallback font", async ({
+  page,
+}) => {
+  await wholeNamesFixture(page);
+  // Open Sans arrives 3s late: the cards first render in the fallback font.
+  await page.route(/\/opensans[^/]*\.woff2$/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    await route.continue();
+  });
+  await page.setViewportSize({ width: 375, height: 900 });
+  // The font preload holds the load event; the cards do not wait for it.
+  await page.goto("/#catalogue?lang=ru", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".product-card")).toHaveCount(wholeNames.length);
+  const openSans = () =>
+    page.evaluate(
+      () =>
+        [...document.fonts].find(
+          (face) => face.family.replace(/"/g, "") === "Open Sans",
+        )?.status,
+    );
+  expect(await openSans()).toBe("loading");
+  await expect.poll(openSans, { timeout: 10000 }).toBe("loaded");
+  await wholeNamesHold(page, "catalogue", 375, 100);
 });

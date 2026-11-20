@@ -1,7 +1,8 @@
 /* Component foundation r4. This is the only editable token value source. */
 :root {
   /* Typography: nominal pixels assume a 16px browser default. */
-  --bt-font-family: Arial, Helvetica, sans-serif;
+  --bt-font-family:
+    "Open Sans", "Open Sans Fallback", Arial, Helvetica, sans-serif;
   --bt-font-size-caption: 0.875rem;
   --bt-font-size-small: 0.9375rem;
   --bt-font-size-body: 1.0625rem;

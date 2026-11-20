@@ -144,6 +144,7 @@
   font-size: 28px;
   line-height: 34px;
   font-weight: 700;
+  font-stretch: condensed;
 }
 .hero-subtitle {
   display: -webkit-box;

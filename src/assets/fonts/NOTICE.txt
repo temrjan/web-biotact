@@ -1,0 +1,5 @@
+Open Sans (variable woff2, wdth 75-100, wght 300-800), self-hosted subset for Biotact.
+Source: https://github.com/googlefonts/opensans (commit bd7e37632246368c60fdcbd374dbf9bad11969b6, v3.003).
+Modification: subset with fonttools 4.60.1 (--layout-features=* --name-IDs=* keeping Latin/Cyrillic RU+UZ/punct) and compressed to WOFF2.
+Copyright 2020 The Open Sans Project Authors (https://github.com/googlefonts/opensans)
+Licensed under the SIL Open Font License, Version 1.1 (see OFL.txt).

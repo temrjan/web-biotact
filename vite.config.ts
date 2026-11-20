@@ -33,6 +33,34 @@ function inlineIconLicence(): Plugin {
   };
 }
 
+/**
+ * Appends the self-hosted Open Sans notice and its SIL Open Font License to
+ * the licence file. Registered after `inlineIconLicence()`, so this section
+ * ends the file.
+ */
+function fontLicence(): Plugin {
+  return {
+    name: "open-sans-font-licence",
+    apply: "build",
+    generateBundle: {
+      order: "post",
+      handler(_, bundle) {
+        const file = bundle[LICENSE_FILE];
+        const read = (name: string) =>
+          readFileSync(
+            new URL(`src/assets/fonts/${name}`, import.meta.url),
+            "utf8",
+          ).trim();
+        const notice = read("NOTICE.txt"),
+          licence = read("OFL.txt");
+        if (file?.type !== "asset" || !notice || !licence)
+          throw new Error("Licence file or Open Sans notice not found");
+        file.source = `${String(file.source).trimEnd()}\n\n## Open Sans font (SIL Open Font License 1.1)\n\n${notice}\n\n${licence}\n`;
+      },
+    },
+  };
+}
+
 /** Local public-read transport only; never installed in dev or a browser build. */
 function publicCataloguePreview(): Plugin {
   return {
@@ -129,9 +157,10 @@ export default defineConfig(({ isPreview }) => {
     plugins: [
       react(),
       inlineIconLicence(),
+      fontLicence(),
       ...(publicPreview ? [publicCataloguePreview()] : []),
     ],
-    // All bundled dependencies' licences, plus the inline icons' licence.
+    // All bundled dependencies' licences, the inline icons' and the font's licence.
     build: { target: "es2022", license: { fileName: LICENSE_FILE } },
     ...(publicPreview ? { preview: { host: "127.0.0.1", cors: false } } : {}),
   };

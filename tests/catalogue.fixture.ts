@@ -138,9 +138,28 @@ export interface Controls {
   interval: string | null;
   requests: URL[];
 }
+/** Sets the root font size, as a reader's larger text does, before the page renders. */
+export async function rootFontSize(page: Page, percent: number) {
+  await page.addInitScript((size) => {
+    const set = () =>
+      document.documentElement.style.setProperty("font-size", size);
+    if (document.documentElement) set();
+    else
+      new MutationObserver((_, observer) => {
+        if (!document.documentElement) return;
+        set();
+        observer.disconnect();
+      }).observe(document, { childList: true });
+  }, `${percent}%`);
+}
+/**
+ * Synthetic public API. `uzNames` replaces product names in product lists
+ * requested in Uzbek (X-Language: uz), by product id.
+ */
 export async function fixture(
   page: Page,
   sourceProducts = products,
+  uzNames: Record<number, string> = {},
 ): Promise<Controls> {
   const controls: Controls = { requests: [], banners, interval: "4000" };
   await page.route("**/synthetic-*.svg", (route) =>
@@ -251,6 +270,8 @@ export async function fixture(
         );
     const total = items.length;
     items = items.slice((n - 1) * size, n * size);
+    if (route.request().headers()["x-language"] === "uz")
+      items = items.map((p) => ({ ...p, name: uzNames[p.id] ?? p.name }));
     await route.fulfill({
       json: {
         items,

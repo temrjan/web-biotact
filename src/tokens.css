@@ -34,6 +34,9 @@
   --bt-header-min-height-compact: 4rem;
   --bt-control-min-height: 2.75rem;
   --bt-card-media-min-height: 8rem;
+  /* Narrowest product card name box: the widest current name word at the 12px
+     name floor (131px) plus 1px for fractional card widths (S5). */
+  --bt-card-name-min: 132px;
   --bt-border-width: 1px;
   --bt-indicator-width: 3px;
   --bt-radius-control: 0.625rem;

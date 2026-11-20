@@ -294,6 +294,86 @@ function Availability({
     </p>
   );
 }
+/** Smallest card name size, in CSS pixels at every root size (S5). */
+const NAME_FLOOR = 12;
+/** Card name sizes are tried in quarter-pixel steps. */
+const NAME_STEP = 0.25;
+/**
+ * The parts of a card name a line must not split, as ranges of its text: its
+ * words, cut after a hyphen or a slash, where a line may break anyway.
+ */
+function nameParts(name: HTMLElement) {
+  const parts: Range[] = [];
+  const walker = document.createTreeWalker(name, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode())
+    for (const part of (node.textContent ?? "").matchAll(
+      /[^\s\-\u2010/]*[-\u2010/]|[^\s\-\u2010/]+/g,
+    )) {
+      const range = document.createRange();
+      range.setStart(node, part.index);
+      range.setEnd(node, part.index + part[0].length);
+      parts.push(range);
+    }
+  return parts;
+}
+/** A part is whole when all of it sits on one line. */
+function oneLine(part: Range) {
+  const [first, ...rest] = part.getClientRects();
+  return rest.every((rect) => Math.abs(rect.top - (first?.top ?? 0)) < 2);
+}
+/**
+ * Whole product names (S5): a name keeps its stylesheet size while no part of
+ * it is split across lines; otherwise it takes the largest smaller
+ * quarter-pixel size at which no part is split, never below NAME_FLOOR. Each
+ * size is judged on the name as rendered: hinted glyph widths grow in steps,
+ * so a size scaled from one measurement can still split a word.
+ */
+function fitName(name: HTMLElement) {
+  name.style.fontSize = "";
+  // Not laid out (hidden): the observer fits it once it has a box.
+  if (!name.getBoundingClientRect().width) return;
+  const parts = nameParts(name);
+  let size = parseFloat(getComputedStyle(name).fontSize);
+  while (size > NAME_FLOOR && !parts.every(oneLine)) {
+    size = Math.max(
+      NAME_FLOOR,
+      Math.ceil(size / NAME_STEP) * NAME_STEP - NAME_STEP,
+    );
+    name.style.fontSize = `${size}px`;
+  }
+}
+/** Card names on the page, refitted when their box or the web font changes. */
+const names = new Set<HTMLElement>();
+const resizedNames = new Set<HTMLElement>();
+let nameFrame = 0;
+let nameObserver: ResizeObserver | null = null;
+function watchName(name: HTMLElement) {
+  if (!nameObserver) {
+    // A refit changes the name's height, so it runs in the next frame rather
+    // than inside the observer callback, which would loop.
+    nameObserver = new ResizeObserver((entries) => {
+      for (const { target } of entries)
+        if (target instanceof HTMLElement) resizedNames.add(target);
+      nameFrame ||= requestAnimationFrame(() => {
+        nameFrame = 0;
+        for (const resized of resizedNames)
+          if (names.has(resized)) fitName(resized);
+        resizedNames.clear();
+      });
+    });
+    // Open Sans replacing the fallback font changes every width.
+    document.fonts.addEventListener("loadingdone", () =>
+      names.forEach(fitName),
+    );
+  }
+  names.add(name);
+  nameObserver.observe(name);
+  return () => {
+    names.delete(name);
+    resizedNames.delete(name);
+    nameObserver?.unobserve(name);
+  };
+}
 interface CardPurchases extends Purchases {
   chooseSize: (
     product: api.Product,
@@ -328,6 +408,14 @@ function Card({
     (size !== null && product.available_sizes.includes(size));
   const count = productLines.find((line) => line.size === size)?.quantity || 0;
   const t = basketCopy[lang];
+  const nameRef = useRef<HTMLHeadingElement>(null);
+  // Fitted before paint, again for a new name (language switch).
+  useLayoutEffect(() => {
+    const name = nameRef.current;
+    if (!name) return;
+    fitName(name);
+    return watchName(name);
+  }, [product.name]);
   return (
     <article className="product-card" data-product-id={product.id}>
       {product.is_sale && (
@@ -343,7 +431,7 @@ function Card({
       </a>
       <div className="card-copy">
         <Price product={product} lang={lang} />
-        <h3>
+        <h3 ref={nameRef}>
           <a href={target}>{product.name}</a>
         </h3>
         <Availability product={product} lang={lang} />
@@ -444,7 +532,8 @@ const hintedRows = new Set<string>();
  * that shifted or that the visitor touched, focused or scrolled stays at its
  * start when Home is shown again without a reload. Not under reduced motion.
  * Snapping is off for a shifted row (re-enabling it would snap the row
- * straight back).
+ * straight back). A row that shows one card, wider than half the row, does not
+ * move: the peeking next card is its sign that the row scrolls (S5).
  */
 function useRowHint(row: HTMLDivElement | null, enabled: boolean) {
   useEffect(() => {
@@ -485,6 +574,8 @@ function useRowHint(row: HTMLDivElement | null, enabled: boolean) {
             row.scrollLeft > 1 ||
             max <= 1 ||
             !(card instanceof HTMLElement) ||
+            // One card in view (S5): the next card already peeks out.
+            2 * card.offsetWidth > row.clientWidth ||
             !window.matchMedia(COMPACT_QUERY).matches ||
             window.matchMedia("(prefers-reduced-motion: reduce)").matches
           )
